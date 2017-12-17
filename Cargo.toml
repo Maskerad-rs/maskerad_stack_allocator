@@ -1,0 +1,22 @@
+[package]
+name = "maskerad_stack_allocator"
+version = "0.1.0"
+authors = ["Maskerad developers - <maskerad-rs.organization@protonmail.com>"]
+publish = false
+description = "A stack-based allocator, for memory allocation in tight game loops"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Maskerad-rs/maskerad_stack_allocator"
+readme = "README.md"
+keywords = ["memory-allocator", "stack-allocator"]
+categories = ["memory-management", "game-engines", "data-structures"]
+
+[badges]
+
+appveyor = { repository = "Malkaviel/maskerad-stack-allocator", branch = "master", service = "github" }
+travis-ci = { repository = "Maskerad-rs/maskerad_stack_allocator", branch = "master" }
+codecov = { repository = "Maskerad-rs/maskerad_stack_allocator", branch = "master", service = "github" }
+is-it-maintained-issue-resolution = { repository = "Maskerad-rs/maskerad_stack_allocator" }
+is-it-maintained-open-issues = { repository = "Maskerad-rs/maskerad_stack_allocator" }
+maintenance = { status = "actively-developed" }
+
+[dependencies]
