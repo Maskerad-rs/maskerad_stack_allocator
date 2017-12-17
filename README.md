@@ -12,8 +12,10 @@ Usage
 -----
 TODO
 
-The purpose of custom memory allocators
+Context
 ---------------------------------------
+### Purpose of custom allocators
+
 Time-constrained programs, like video-games, need to be as fast as possible.
 
 A video-game, in its game loop, needs to :
@@ -27,14 +29,14 @@ In order to display **60** frames per second, this loop needs to be completed in
 ### Problems about general-purpose memory allocators
 One possible bottleneck is **dynamic** memory allocation (allocation on the **heap**). Even though Rust *sometimes* uses **[jemalloc](http://jemalloc.net/)**, a fast
 general-purpose memory allocator (see this [RFC](https://github.com/rust-lang/rfcs/blob/master/text/1974-global-allocators.md)),
-heap memory allocation can be a very slow operation.
-
-TODO: benchmarks
+heap memory allocation can be a **slow** operation.
 
 Moreover, memory can become **fragmented** over time :
 
+Even though we have enough **total** memory, this memory is not **contiguous** so we can't
+ allocate anything.
 ![memory fragmentation illustration](readme_ressources/memory_fragmentation.svg)
-TODO : schemas about memory allocation
+
 
 Customs memory allocators can help to deal with those two problems.
 
