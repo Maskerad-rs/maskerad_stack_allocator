@@ -25,12 +25,7 @@ Usage
 -----
 ### Installation
 
-This library is available on crates.io
-
-```toml
-[dependencies]
-maskerad_stack_allocator = "0.1.0"
-```
+This library is available on [crates.io](https://crates.io/crates/maskerad_stack_allocator)
 
 ### Example
 Usage as a **single-frame** allocator:
