@@ -5,6 +5,13 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+//! This library provides a stack-based allocator, and a double-buffered stack allocator.
+//!
+//! Its primary purpose is to allocate memory in game loops without calling the heap allocator directly,
+//! in order to prevent memory fragmentation.
+//!
+//! This is a nightly-only library.
+
 #![feature(alloc)]
 #![feature(offset_to)]
 #![feature(allocator_api)]

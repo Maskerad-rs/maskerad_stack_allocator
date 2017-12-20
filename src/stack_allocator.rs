@@ -5,56 +5,66 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-
-/*
-Documentation used :
-                        PLACEMENT SYNTAX (not used)
-
-    An example of ring buffer allocator, and placement syntax.
-    https://play.rust-lang.org/?gist=1560082065f1cafffd14&version=nightly
-
-    Example of what looks like an old version of Box<T>
-    https://github.com/pnkfelix/allocoll/blob/fe51b81a19859eaca22dd0300e42613e11369773/src/boxing.rs
-
-    Traits required for the PLACE <- VALUE syntax.
-    https://doc.rust-lang.org/stable/std/ops/trait.Place.html
-    https://doc.rust-lang.org/stable/std/ops/trait.InPlace.html
-    https://doc.rust-lang.org/stable/std/ops/trait.Placer.html
-
-    How placement allocation works (PLACE <- VALUE)
-    https://www.reddit.com/r/rust/comments/3r8vqq/how_to_do_placement_allocation/
-
-    explanation of placement_in, placement_new...
-    https://internals.rust-lang.org/t/placement-nwbi-faq-new-box-in-left-arrow/2789
-
-
-
-                        STACK ALLOCATOR DESIGN (used for one/two-frame allocation)
-    Book : Game Engine Architecture, Jason Gregory.
-
-                        POOL ALLOCATOR DESIGN
-    Book: Game Engine Architecture, Jason Gregory.
-    Book: Game Programming Patterns, Robert Nystrom.
-
-
-
-                        RUST DOCUMENTATION & SOURCE FILES
-    boxed.rs, ptr.rs, raw_vec.rs, vec.rs, heap.rs, allocator.rs, place.rs, intrinsics.rs
-
-    Source code of the arena allocator.
-    https://github.com/rust-lang/rust/blob/master/src/libarena/lib.rs
-
-
-*/
-
-
-//use errors::{StackAllocError, StackAllocResult};
-
 use alloc::raw_vec::RawVec;
 use alloc::allocator::Layout;
 use core;
 use std::cell::Cell;
 
+/// A stack-based allocator.
+///
+/// It uses a RawVec<u8> to allocate bytes in a vector-like fashion
+/// and a pointer to its current top of the stack.
+///
+/// When instantiated, the top pointer is at the bottom of the stack.
+/// When an object is allocated in memory, a pointer to the current top of the stack is returned and
+/// the pointer to the current top of the stack is moved according to an offset.
+///
+/// This offset is calculated by the size of the object, its memory-alignment and an offset to align the object in memory.
+///
+/// This allocator is dropless: memory is never freed. It is assumed that is allocator is used in a game loop the following way :
+/// - the allocator is cleared
+/// - objects are allocated with the allocator
+/// - objects are consumed
+///
+/// Every object allocated at frame N is used at frame N, not N + 1. This way, even though memory is overridden,
+/// it is guaranteed that this overridden memory was not used.
+///
+/// # Example
+///
+/// ```
+/// use maskerad_stack_allocator::StackAllocator;
+///
+/// struct Monster {
+///     hp :u32,
+///     level: u32,
+/// }
+///
+/// impl Default for Monster {
+///     fn default() -> Self {
+///         Monster {
+///         hp: 1,
+///         level: 1,
+///         }
+///     }
+/// }
+///
+/// let single_frame_allocator = StackAllocator::with_capacity(100); //100 bytes
+/// let mut closed = false;
+///
+/// while !closed {
+///     //allocator cleared every frame.
+///     single_frame_allocator.reset();
+///
+///     //...
+///
+///     //allocate from the single frame allocator.
+///     //Be sure to use the data during this frame only!
+///     let my_monster = single_frame_allocator.alloc(Monster::default());
+///
+///     assert_eq!(my_monster.level, 1);
+///     closed = true;
+/// }
+/// ```
 pub struct StackAllocator {
     stack: RawVec<u8>,
     //ptr to the stack's "top". Cell gives use interior mutability
@@ -66,6 +76,15 @@ pub struct StackAllocator {
 
 
 impl StackAllocator {
+    /// Create a StackAllocator with the given capacity (in bytes).
+    /// # Example
+    /// ```
+    /// #![feature(alloc)]
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    /// assert_eq!(allocator.stack().cap(), 100);
+    /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         let stack = RawVec::with_capacity(capacity);
         let current_offset = Cell::new(stack.ptr() as *mut u8);
@@ -75,14 +94,40 @@ impl StackAllocator {
         }
     }
 
+    /// Return an immutable reference to the stack used by the allocator.
     pub fn stack(&self) -> &RawVec<u8> {
         &self.stack
     }
 
+    /// Return an immutable reference to the current top of the stack.
+    ///
+    /// # Example
+    /// ```
+    /// #![feature(alloc)]
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    ///
+    /// // allocator.stack().ptr() return a pointer to the start of the allocation (the bottom of the stack).
+    /// assert_eq!(allocator.stack().ptr(), allocator.current_offset().get());
+    /// ```
     pub fn current_offset(&self) -> &Cell<*mut u8> {
         &self.current_offset
     }
 
+    /// Move the pointer from the current top of the stack to the bottom of the stack.
+    /// # Example
+    /// ```
+    /// #![feature(alloc)]
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    /// let an_i32 = allocator.alloc(25);
+    /// assert_ne!(allocator.stack().ptr(), allocator.current_offset().get());
+    ///
+    /// allocator.reset();
+    /// assert_eq!(allocator.stack().ptr(), allocator.current_offset().get());
+    /// ```
     pub fn reset(&self) {
         self.current_offset.set(self.stack.ptr());
     }
@@ -98,10 +143,19 @@ impl StackAllocator {
         current_cap + offset < self.stack.cap()
     }
 
-
-    //We use arith_offset and not offset to move our current_offset, since we are not always in bounds
-    //or 1 byte past the end of the allocated object (i'm not sure about that actually, but it looks safer).
-    //Allocate a new block of memory of the given size, from stack top.
+    /// Allocate data in the allocator's memory, from the current top of the stack.
+    /// # Panics
+    /// This function will panic if the current length of the allocator + the size of the allocated object
+    /// exceed the allocator's capacity.
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    ///
+    /// let my_i32 = allocator.alloc(26);
+    /// assert_eq!(my_i32, &mut 26);
+    /// ```
     pub fn alloc<T>(&self, value: T) -> &mut T {
         let layout = Layout::new::<T>(); //is always a power of two.
         let offset = layout.align() + layout.size();
@@ -131,6 +185,8 @@ impl StackAllocator {
 
             let aligned_ptr = (unaligned_ptr + adjustment) as *mut u8;
             //println!("aligned ptr (unaligned ptr addr + adjustment): {:?}", aligned_ptr);
+
+            assert!((self.stack.ptr().offset_to(aligned_ptr).unwrap() as usize) < self.stack.cap());
 
             //Now update the current_offset
             self.current_offset.set(aligned_ptr);
@@ -198,7 +254,6 @@ mod stack_allocator_test {
 
             total amount of memory used: (alignment + size) + adjustment = 3.
         */
-        //alloc.print_current_memory_status();
         let _test_1_byte = alloc.alloc::<u8>(2);
         let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset.get()).unwrap() as usize;
         let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
@@ -261,14 +316,10 @@ mod stack_allocator_test {
     fn test_reset() {
         //Test if there's any problem with memory overwriting.
         let alloc = StackAllocator::with_capacity(200);
-        //alloc.print_current_memory_status();
         let test_1_byte = alloc.alloc::<u8>(2);
-        //alloc.print_current_memory_status();
         assert_eq!(test_1_byte, &mut 2);
         alloc.reset();
-        //alloc.print_current_memory_status();
         let test_1_byte = alloc.alloc::<u8>(5);
-        //alloc.print_current_memory_status();
         assert_eq!(test_1_byte, &mut 5);
     }
 

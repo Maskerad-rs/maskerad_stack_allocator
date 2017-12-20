@@ -38,7 +38,8 @@ extern crate maskerad_stack_allocator;
 use maskerad_stack_allocator::StackAllocator;
 
 let single_frame_allocator = StackAllocator::with_capacity(100); //100 bytes
-while(!closed) {
+
+while !closed {
     //allocator cleared every frame.
     single_frame_allocator.reset();
     
@@ -59,7 +60,8 @@ extern crate maskerad_stack_allocator;
 use maskerad_stack_allocator::DoubleBufferedAllocator;
 
 let double_buffered_allocator = DoubleBufferedAllocator::with_capacity(100);
-while(!closed) {
+
+while !closed {
     //swap the active and inactive buffers of the allocator.
     double_buffered_allocator.swap_buffers();
     
