@@ -12,17 +12,6 @@ maskerad stack allocator
 
 This library is **nightly-only**, and was meant for a **very specific** use case: **game loops**.
 
-Usage
------
-### Installation
-
-Add the crate as a dependency in your Cargo.toml:
-
-```toml
-[dependencies]
-maskerad_stack_allocator = "0.1.0"
-```
-
 ### More informations
 
 See the [github repository](https://github.com/Maskerad-rs/maskerad_stack_allocator) for more informations on this crate.
