@@ -12,5 +12,8 @@
 extern crate alloc;
 extern crate core;
 
-pub mod stack_allocator;
-pub mod errors;
+mod stack_allocator;
+mod double_buffered_allocator;
+
+pub use stack_allocator::StackAllocator;
+pub use double_buffered_allocator::DoubleBufferedAllocator;

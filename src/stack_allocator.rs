@@ -48,14 +48,14 @@ Documentation used :
 */
 
 
-use errors::{StackAllocError, StackAllocResult};
+//use errors::{StackAllocError, StackAllocResult};
 
 use alloc::raw_vec::RawVec;
 use alloc::allocator::Layout;
 use core;
 use std::cell::Cell;
 
-pub struct StackAlloc {
+pub struct StackAllocator {
     stack: RawVec<u8>,
     //ptr to the stack's "top". Cell gives use interior mutability
     //(With Reset(&mut self) and alloc(&mut self), we could only allocate 1 time. After that...
@@ -65,19 +65,28 @@ pub struct StackAlloc {
 }
 
 
-impl StackAlloc {
+impl StackAllocator {
     pub fn with_capacity(capacity: usize) -> Self {
         let stack = RawVec::with_capacity(capacity);
         let current_offset = Cell::new(stack.ptr() as *mut u8);
-        StackAlloc {
+        StackAllocator {
             stack,
             current_offset,
         }
     }
 
+    pub fn stack(&self) -> &RawVec<u8> {
+        &self.stack
+    }
+
+    pub fn current_offset(&self) -> &Cell<*mut u8> {
+        &self.current_offset
+    }
+
     pub fn reset(&self) {
         self.current_offset.set(self.stack.ptr());
     }
+
 
     fn enough_space_aligned(&self, offset_ptr: *mut u8) -> bool {
         let future_cap = self.stack.ptr().offset_to(offset_ptr).unwrap() as usize; //We don't allocate zero typed objects
@@ -89,23 +98,17 @@ impl StackAlloc {
         current_cap + offset < self.stack.cap()
     }
 
+
     //We use arith_offset and not offset to move our current_offset, since we are not always in bounds
     //or 1 byte past the end of the allocated object (i'm not sure about that actually, but it looks safer).
     //Allocate a new block of memory of the given size, from stack top.
-    pub fn alloc<T>(&self, value: T) -> StackAllocResult<&mut T> {
+    pub fn alloc<T>(&self, value: T) -> &mut T {
         let layout = Layout::new::<T>(); //is always a power of two.
         let offset = layout.align() + layout.size();
 
         //println!("\nalignment: {}-byte alignment", layout.align());
         //println!("size: {}", layout.size());
         //println!("Total amount of memory to allocate: {} bytes", offset);
-
-        if !self.enough_space_unaligned(offset) {
-            let future_cap = self.stack.ptr().offset_to(self.current_offset.get()).unwrap() as usize + offset;
-            let remaining_cap = self.stack.cap() - future_cap;
-
-            return Err(StackAllocError {description: format!("The stack allocator is out of memory (unaligned) ! bytes used: {}, overflow by {} bytes.", future_cap, remaining_cap)});
-        }
 
         //Get the actual stack top. It will be the address returned.
         let old_stack_top = self.current_offset.get();
@@ -114,7 +117,7 @@ impl StackAlloc {
         //Determine the total amount of memory to allocate
         unsafe {
             //Get the ptr to the unaligned location
-            let unaligned_ptr = old_stack_top.wrapping_offset(offset as isize) as usize;
+            let unaligned_ptr = old_stack_top.offset(offset as isize) as usize;
             //println!("unaligned location: {:?}", unaligned_ptr as *mut u8);
 
             //Now calculate the adjustment by masking off the lower bits of the address, to determine
@@ -129,12 +132,6 @@ impl StackAlloc {
             let aligned_ptr = (unaligned_ptr + adjustment) as *mut u8;
             //println!("aligned ptr (unaligned ptr addr + adjustment): {:?}", aligned_ptr);
 
-            if !self.enough_space_aligned(aligned_ptr) {
-                let future_cap = self.stack.ptr().offset_to(aligned_ptr).unwrap() as usize;
-                let remaining_cap = self.stack.cap() - future_cap;
-                return Err(StackAllocError { description: format!("The stack allocator is out of memory (aligned) ! bytes used: {}, overflow by {} bytes.", future_cap, remaining_cap)});
-            }
-
             //Now update the current_offset
             self.current_offset.set(aligned_ptr);
 
@@ -144,7 +141,7 @@ impl StackAlloc {
             core::ptr::write::<T>(old_stack_top as *mut T, value);
 
 
-            Ok(&mut *(old_stack_top as *mut T))
+            &mut *(old_stack_top as *mut T)
         }
     }
 }
@@ -153,10 +150,12 @@ impl StackAlloc {
 #[cfg(test)]
 mod stack_allocator_test {
     use super::*;
+    extern crate time;
+
 
     #[test]
     fn test_enough_space() {
-        let alloc = StackAlloc::with_capacity(200);
+        let alloc = StackAllocator::with_capacity(200);
         assert!(alloc.enough_space_unaligned(13));
         assert!(!alloc.enough_space_unaligned(201));
     }
@@ -164,7 +163,7 @@ mod stack_allocator_test {
     #[test]
     fn creation_with_right_capacity() {
         //create a StackAllocator with the specified size.
-        let alloc = StackAlloc::with_capacity(200);
+        let alloc = StackAllocator::with_capacity(200);
         let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset.get()).unwrap() as usize;
         let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
         assert_eq!(cap_used, 0);
@@ -176,7 +175,7 @@ mod stack_allocator_test {
         //Check the allocation with u8, u32 an u64, to verify the alignment behavior.
 
         //We allocate 200 bytes of memory.
-        let alloc = StackAlloc::with_capacity(200);
+        let alloc = StackAllocator::with_capacity(200);
 
         /*
             U8 :
@@ -200,7 +199,7 @@ mod stack_allocator_test {
             total amount of memory used: (alignment + size) + adjustment = 3.
         */
         //alloc.print_current_memory_status();
-        let _test_1_byte = alloc.alloc::<u8>(2).unwrap();
+        let _test_1_byte = alloc.alloc::<u8>(2);
         let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset.get()).unwrap() as usize;
         let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
         assert_eq!(cap_used, 3); //3
@@ -226,7 +225,7 @@ mod stack_allocator_test {
 
             total amount of memory used: (alignment + size) + adjustment = 9.
         */
-        let _test_4_bytes = alloc.alloc::<u32>(60000).unwrap();
+        let _test_4_bytes = alloc.alloc::<u32>(60000);
         let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset.get()).unwrap() as usize;
         let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
         assert_eq!(cap_used, 12); //3 + 9
@@ -251,7 +250,7 @@ mod stack_allocator_test {
 
             total amount of memory used: (alignment + size) + adjustment = 20.
         */
-        let _test_8_bytes = alloc.alloc::<u64>(100000).unwrap();
+        let _test_8_bytes = alloc.alloc::<u64>(100000);
         let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset.get()).unwrap() as usize;
         let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
         assert_eq!(cap_used, 32); // 3 + 9 + 20
@@ -261,15 +260,59 @@ mod stack_allocator_test {
     #[test]
     fn test_reset() {
         //Test if there's any problem with memory overwriting.
-        let alloc = StackAlloc::with_capacity(200);
+        let alloc = StackAllocator::with_capacity(200);
         //alloc.print_current_memory_status();
-        let test_1_byte = alloc.alloc::<u8>(2).unwrap();
+        let test_1_byte = alloc.alloc::<u8>(2);
         //alloc.print_current_memory_status();
         assert_eq!(test_1_byte, &mut 2);
         alloc.reset();
         //alloc.print_current_memory_status();
-        let test_1_byte = alloc.alloc::<u8>(5).unwrap();
+        let test_1_byte = alloc.alloc::<u8>(5);
         //alloc.print_current_memory_status();
         assert_eq!(test_1_byte, &mut 5);
     }
+
+    //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
+    struct Monster {
+        hp :u32,
+        level: u32,
+    }
+
+    impl Default for Monster {
+        fn default() -> Self {
+            Monster {
+                hp: 1,
+                level: 1,
+            }
+        }
+    }
+
+    /*
+    #[test]
+    fn speed_comparison() {
+        let before = time::precise_time_ns();
+        for _ in 0..1000 {
+            let monster1 = Box::new(Monster::default());
+            let monster2 = Box::new(Monster::default());
+            let monster3 = Box::new(Monster::default());
+        }
+        let after = time::precise_time_ns();
+        let elapsed = after - before;
+        println!("Time with heap alloc: {}", elapsed);
+
+        let single_frame_alloc = StackAlloc::with_capacity(100);
+        let before = time::precise_time_ns();
+        for _ in 0..1000 {
+            single_frame_alloc.reset();
+            let monster1 = single_frame_alloc.alloc(Monster::default());
+            let monster2 = single_frame_alloc.alloc(Monster::default());
+            let monster3 = single_frame_alloc.alloc(Monster::default());
+        }
+        let after = time::precise_time_ns();
+        let elapsed = after - before;
+        println!("Time with stack alloc: {}", elapsed);
+
+        panic!();
+    }
+    */
 }
