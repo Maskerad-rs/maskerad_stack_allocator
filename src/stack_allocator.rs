@@ -22,8 +22,11 @@ use std::cell::Cell;
 /// This offset is calculated by the size of the object, its memory-alignment and an offset to align the object in memory.
 ///
 /// This allocator is dropless: memory is never freed. It is assumed that is allocator is used in a game loop the following way :
+///
 /// - the allocator is cleared
+///
 /// - objects are allocated with the allocator
+///
 /// - objects are consumed
 ///
 /// Every object allocated at frame N is used at frame N, not N + 1. This way, even though memory is overridden,
