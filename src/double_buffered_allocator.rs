@@ -92,12 +92,18 @@ impl DoubleBufferedAllocator {
     /// let allocator = DoubleBufferedAllocator::with_capacity(100);
     ///
     /// let my_i32 = allocator.alloc(26);
-    /// assert_eq!(allocator.inactive_buffer().stack().ptr(), allocator.inactive_buffer().current_offset().get());
-    /// assert_ne!(allocator.active_buffer().stack().ptr(), allocator.active_buffer().current_offset().get());
+    /// let active_buffer_top_stack = allocator.active_buffer().marker();
+    /// let inactive_buffer_top_stack = allocator.inactive_buffer().marker();
+    ///
+    /// assert_eq!(allocator.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
+    /// assert_ne!(allocator.active_buffer().stack().ptr(), active_buffer_top_stack);
     ///
     /// allocator.reset_current();
-    /// assert_eq!(allocator.inactive_buffer().stack().ptr(), allocator.inactive_buffer().current_offset().get());
-    /// assert_eq!(allocator.active_buffer().stack().ptr(), allocator.active_buffer().current_offset().get());
+    /// let active_buffer_top_stack = allocator.active_buffer().marker();
+    /// let inactive_buffer_top_stack = allocator.inactive_buffer().marker();
+    ///
+    /// assert_eq!(allocator.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
+    /// assert_eq!(allocator.active_buffer().stack().ptr(), active_buffer_top_stack);
     /// ```
     pub fn reset_current(&self) {
         self.buffers[self.current as usize].reset();
@@ -143,24 +149,41 @@ mod double_buffer_allocator_test {
     #[test]
     fn reset() {
         let alloc = DoubleBufferedAllocator::with_capacity(100);
-        assert_eq!(alloc.active_buffer().stack().ptr(), alloc.active_buffer().current_offset().get());
-        assert_eq!(alloc.inactive_buffer().stack().ptr(), alloc.inactive_buffer().current_offset().get());
+        let active_buffer_top_stack = alloc.active_buffer().marker();
+        let inactive_buffer_top_stack = alloc.inactive_buffer().marker();
+
+        assert_eq!(alloc.active_buffer().stack().ptr(), active_buffer_top_stack);
+        assert_eq!(alloc.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
+
         let my_i32 = alloc.alloc(25);
-        assert_ne!(alloc.active_buffer().stack().ptr(), alloc.active_buffer().current_offset().get());
-        assert_eq!(alloc.inactive_buffer().stack().ptr(), alloc.inactive_buffer().current_offset().get());
+        let active_buffer_top_stack = alloc.active_buffer().marker();
+        let inactive_buffer_top_stack = alloc.inactive_buffer().marker();
+
+        assert_ne!(alloc.active_buffer().stack().ptr(), active_buffer_top_stack);
+        assert_eq!(alloc.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
+
         alloc.reset_current();
-        assert_eq!(alloc.active_buffer().stack().ptr(), alloc.active_buffer().current_offset().get());
-        assert_eq!(alloc.inactive_buffer().stack().ptr(), alloc.inactive_buffer().current_offset().get());
+        let active_buffer_top_stack = alloc.active_buffer().marker();
+        let inactive_buffer_top_stack = alloc.inactive_buffer().marker();
+
+        assert_eq!(alloc.active_buffer().stack().ptr(), active_buffer_top_stack);
+        assert_eq!(alloc.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
     }
 
     #[test]
     fn swap() {
         let mut alloc = DoubleBufferedAllocator::with_capacity(100);
-        assert_eq!(alloc.buffers[0].stack().ptr(), alloc.buffers[0].current_offset().get());
-        assert_eq!(alloc.buffers[1].stack().ptr(), alloc.buffers[1].current_offset().get());
+        let first_buffer_top_stack = alloc.buffers[0].marker();
+        let second_buffer_top_stack = alloc.buffers[1].marker();
+
+        assert_eq!(alloc.buffers[0].stack().ptr(), first_buffer_top_stack);
+        assert_eq!(alloc.buffers[1].stack().ptr(), second_buffer_top_stack);
         alloc.swap_buffers();
         let my_i32 = alloc.alloc(25);
-        assert_eq!(alloc.buffers[0].stack().ptr(), alloc.buffers[0].current_offset().get());
-        assert_ne!(alloc.buffers[1].stack().ptr(), alloc.buffers[1].current_offset().get());
+        let first_buffer_top_stack = alloc.buffers[0].marker();
+        let second_buffer_top_stack = alloc.buffers[1].marker();
+
+        assert_eq!(alloc.buffers[0].stack().ptr(), first_buffer_top_stack);
+        assert_ne!(alloc.buffers[1].stack().ptr(), second_buffer_top_stack);
     }
 }

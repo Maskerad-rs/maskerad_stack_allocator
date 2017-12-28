@@ -1,6 +1,6 @@
 [package]
 name = "maskerad_stack_allocator"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Maskerad developers - <maskerad-rs.organization@protonmail.com>"]
 description = "A stack-based allocator, for memory allocation in time-constrained programs' loops"
 license = "MIT/Apache-2.0"

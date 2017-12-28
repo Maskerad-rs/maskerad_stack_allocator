@@ -102,21 +102,6 @@ impl StackAllocator {
         &self.stack
     }
 
-    /// Return an immutable reference to the current top of the stack.
-    ///
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::StackAllocator;
-    ///
-    /// let allocator = StackAllocator::with_capacity(100);
-    ///
-    /// // allocator.stack().ptr() return a pointer to the start of the allocation (the bottom of the stack).
-    /// assert_eq!(allocator.stack().ptr(), allocator.current_offset().get());
-    /// ```
-    pub fn current_offset(&self) -> &Cell<*mut u8> {
-        &self.current_offset
-    }
 
     /// Move the pointer from the current top of the stack to the bottom of the stack.
     /// # Example
@@ -126,10 +111,13 @@ impl StackAllocator {
     ///
     /// let allocator = StackAllocator::with_capacity(100);
     /// let an_i32 = allocator.alloc(25);
-    /// assert_ne!(allocator.stack().ptr(), allocator.current_offset().get());
+    /// let ptr_top_stack = allocator.marker();
+    ///
+    /// assert_ne!(allocator.stack().ptr(), ptr_top_stack);
     ///
     /// allocator.reset();
-    /// assert_eq!(allocator.stack().ptr(), allocator.current_offset().get());
+    /// let ptr_top_stack = allocator.marker();
+    /// assert_eq!(allocator.stack().ptr(), ptr_top_stack);
     /// ```
     pub fn reset(&self) {
         self.current_offset.set(self.stack.ptr());
@@ -202,6 +190,47 @@ impl StackAllocator {
 
             &mut *(old_stack_top as *mut T)
         }
+    }
+
+    ///Return a pointer to the current top of the stack.
+    /// # Example
+    /// ```
+    /// #![feature(alloc)]
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    /// let ptr_top_stack = allocator.marker();
+    ///
+    /// // allocator.stack().ptr() return a pointer to the start of the allocation (the bottom of the stack).
+    /// // Nothing has been allocated on the stack, the top of the stack is at the bottom.
+    /// assert_eq!(allocator.stack().ptr(), ptr_top_stack);
+    /// ```
+    pub fn marker(&self) -> *mut u8 {
+        self.current_offset.get()
+    }
+
+    /// Move the pointer from the current top of the stack to a marker.
+    /// # Example
+    /// ```
+    /// #![feature(alloc)]
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    /// let ptr_bottom = allocator.marker(); // bottom of the stack.
+    /// assert_eq!(allocator.stack().ptr(), ptr_bottom);
+    ///
+    /// let an_i32 = allocator.alloc(25);
+    /// // top of the stack after one allocation.
+    /// let ptr_one_alloc = allocator.marker();
+    /// assert_ne!(allocator.stack().ptr(), ptr_one_alloc);
+    ///
+    /// // The current top of the stack is now at the bottom.
+    /// allocator.reset_to_marker(ptr_bottom);
+    /// let ptr_bottom = allocator.marker();
+    /// assert_eq!(allocator.stack().ptr(), ptr_bottom);
+    /// ```
+    pub fn reset_to_marker(&self, marker: *mut u8) {
+        self.current_offset.set(marker);
     }
 }
 
