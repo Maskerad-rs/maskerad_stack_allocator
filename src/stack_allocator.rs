@@ -12,7 +12,7 @@ use std::cell::Cell;
 
 /// A stack-based allocator.
 ///
-/// It uses a RawVec<u8> to allocate bytes in a vector-like fashion
+/// It uses a [RawVec](https://doc.rust-lang.org/alloc/raw_vec/struct.RawVec.html) to allocate bytes in a vector-like fashion
 /// and a pointer to its current top of the stack.
 ///
 /// When instantiated, the top pointer is at the bottom of the stack.
@@ -21,16 +21,12 @@ use std::cell::Cell;
 ///
 /// This offset is calculated by the size of the object, its memory-alignment and an offset to align the object in memory.
 ///
-/// This allocator is dropless: memory is never freed. It is assumed that is allocator is used in a game loop the following way :
+/// When the allocator is reset, the pointer to the top of the stack is moved to the bottom of the stack. Allocation will occur
+/// from the bottom of the stack and will override previously allocated memory.
 ///
-/// - the allocator is cleared
+/// # Be careful
 ///
-/// - objects are allocated with the allocator
-///
-/// - objects are consumed
-///
-/// Every object allocated at frame N is used at frame N, not N + 1. This way, even though memory is overridden,
-/// it is guaranteed that this overridden memory was not used.
+/// This allocator is **dropless**: memory is never *really* freed. You must guarantee that, when overriding memory, this memory was not used.
 ///
 /// # Example
 ///
@@ -55,7 +51,8 @@ use std::cell::Cell;
 /// let mut closed = false;
 ///
 /// while !closed {
-///     //allocator cleared every frame.
+///     // The allocator is cleared every frame.
+///     // (The pointer to the current top of the stack goes back to the bottom).
 ///     single_frame_allocator.reset();
 ///
 ///     //...

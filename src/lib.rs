@@ -7,8 +7,7 @@
 
 //! This library provides a stack-based allocator, and a double-buffered stack allocator.
 //!
-//! Its primary purpose is to allocate memory in game loops without calling the heap allocator directly,
-//! in order to prevent memory fragmentation.
+//! Its primary purpose is to prevent memory fragmentation.
 //!
 //! This is a nightly-only library.
 

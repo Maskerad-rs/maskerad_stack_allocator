@@ -12,7 +12,6 @@ use StackAllocator;
 /// This allocator is a wrapper around two StackAllocator.
 /// It works like a StackAllocator, and allows you to swap the buffers.
 ///
-/// Useful if you want to use data created at frame N during frame N + 1.
 /// # Example
 /// ```
 /// use maskerad_stack_allocator::DoubleBufferedAllocator;
