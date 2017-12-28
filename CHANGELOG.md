@@ -9,7 +9,7 @@ MINOR update: Functionality has been added, but no API breakage.
 MAJOR update: API breakage.
 
 ### December 28
-####version 0.1.2 -> version 1.0.0
+#### version 0.1.2 -> version 1.0.0
 
 StackAllocator::current_offset() function removed.
 
@@ -22,3 +22,7 @@ Updated the documentation.
 Updated the unit tests.
 
 Updated the READMEs.
+
+#### version 1.0.0 -> 1.0.1
+
+Updated Cargo.toml. Removed the wrong badge.
