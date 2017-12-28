@@ -9,7 +9,7 @@ maskerad stack allocator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-This library is **nightly-only**, and was meant for a **very specific** use case: **game loops**.
+This library is **nightly-only**.
 
 ### More informations
 
