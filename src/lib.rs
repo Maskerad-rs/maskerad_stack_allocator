@@ -5,7 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-//! This library provides a stack-based allocator, and a double-buffered stack allocator.
+//! This library provides:
+//! - a **stack-based** allocator,
+//! - a **double-ended stack-based** allocator,
+//! - and a **double-buffered** stack allocator
 //!
 //! Its primary purpose is to prevent memory fragmentation.
 //!
