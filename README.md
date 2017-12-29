@@ -28,6 +28,10 @@ It is a structure holding two stack-based allocator. One is active, the other is
 When we allocate/reset with this allocator, the active stack-based allocator allocates/reset memory.
 We can swap the allocators, the inactive one becomes active.
 
+- a **double-ended** allocator
+
+It works like a stack-based allocator, but allocations can occur on both sides.
+
 
 This library was made to **prevent memory fragmentation** when allocating memory on the heap.
 
