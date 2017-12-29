@@ -1,4 +1,4 @@
-#Changelog
+# Changelog
 
 Semantic versioning : MAJOR.MINOR.PATCH
 
@@ -26,3 +26,16 @@ Updated the READMEs.
 #### version 1.0.0 -> 1.0.1
 
 Updated Cargo.toml. Removed the wrong badge.
+
+### December 29
+#### version 1.0.1 -> version 1.1.0
+
+Removed an unnecessary unit-test in StackAllocator.rs
+
+Removed private functions StackAllocator::enough_space_unaligned() and StackAllocator::enough_space_aligned().
+
+Added the DoubleEndedAllocator structure, a StackAllocator where allocation occurs on both sides.
+
+Added the unit tests for the DoubleEndedAllocator.
+
+Added the documentation for the DoubleEndedAllocator.

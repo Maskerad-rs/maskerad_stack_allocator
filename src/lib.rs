@@ -20,6 +20,8 @@ extern crate core;
 
 mod stack_allocator;
 mod double_buffered_allocator;
+mod double_ended_allocator;
 
 pub use stack_allocator::StackAllocator;
 pub use double_buffered_allocator::DoubleBufferedAllocator;
+pub use double_ended_allocator::DoubleEndedAllocator;

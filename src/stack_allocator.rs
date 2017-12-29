@@ -65,6 +65,8 @@ use std::cell::Cell;
 ///     closed = true;
 /// }
 /// ```
+
+
 pub struct StackAllocator {
     stack: RawVec<u8>,
     //ptr to the stack's "top". Cell gives use interior mutability
@@ -118,17 +120,6 @@ impl StackAllocator {
     /// ```
     pub fn reset(&self) {
         self.current_offset.set(self.stack.ptr());
-    }
-
-
-    fn enough_space_aligned(&self, offset_ptr: *mut u8) -> bool {
-        let future_cap = self.stack.ptr().offset_to(offset_ptr).unwrap() as usize; //We don't allocate zero typed objects
-        future_cap < self.stack.cap()
-    }
-
-    fn enough_space_unaligned(&self, offset: usize) -> bool {
-        let current_cap = self.stack.ptr().offset_to(self.current_offset.get()).unwrap() as usize;
-        current_cap + offset < self.stack.cap()
     }
 
     /// Allocate data in the allocator's memory, from the current top of the stack.
@@ -236,14 +227,6 @@ impl StackAllocator {
 mod stack_allocator_test {
     use super::*;
     extern crate time;
-
-
-    #[test]
-    fn test_enough_space() {
-        let alloc = StackAllocator::with_capacity(200);
-        assert!(alloc.enough_space_unaligned(13));
-        assert!(!alloc.enough_space_unaligned(201));
-    }
 
     #[test]
     fn creation_with_right_capacity() {
