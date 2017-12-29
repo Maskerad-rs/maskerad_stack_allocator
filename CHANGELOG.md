@@ -39,3 +39,8 @@ Added the DoubleEndedAllocator structure, a StackAllocator where allocation occu
 Added the unit tests for the DoubleEndedAllocator.
 
 Added the documentation for the DoubleEndedAllocator.
+
+#### version 1.1.0 -> version 1.1.1
+
+Small documentation correction, at the crate-level documentation. It wasn't said that the library
+provided a DoubleEndedAllocator.
