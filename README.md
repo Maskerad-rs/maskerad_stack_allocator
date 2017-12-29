@@ -1,6 +1,6 @@
 maskerad stack allocator
 ========================
-**A stack-based allocator, for contiguous allocation and memory fragmentation prevention.**
+**Stack-based allocators, for contiguous allocation and memory fragmentation prevention.**
 
 [![codecov](https://codecov.io/gh/Maskerad-rs/maskerad_stack_allocator/branch/master/graph/badge.svg)](https://codecov.io/gh/Maskerad-rs/maskerad_stack_allocator)
 [![Build status](https://ci.appveyor.com/api/projects/status/5h6ndw7bd4b3yavl/branch/master?svg=true)](https://ci.appveyor.com/project/Malkaviel/maskerad-stack-allocator/branch/master)
