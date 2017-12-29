@@ -6,9 +6,13 @@
 // copied, modified, or distributed except according to those terms.
 
 //! This library provides:
+//!
 //! - a **stack-based** allocator,
+//!
 //! - a **double-ended stack-based** allocator,
+//!
 //! - and a **double-buffered** stack allocator
+//!
 //!
 //! Its primary purpose is to prevent memory fragmentation.
 //!

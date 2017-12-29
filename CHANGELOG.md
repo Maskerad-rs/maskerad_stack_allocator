@@ -44,3 +44,7 @@ Added the documentation for the DoubleEndedAllocator.
 
 Small documentation correction, at the crate-level documentation. It wasn't said that the library
 provided a DoubleEndedAllocator.
+
+#### version 1.1.1 -> version 1.1.2
+
+Small formatting problem in the documentation...
