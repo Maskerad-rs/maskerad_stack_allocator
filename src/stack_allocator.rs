@@ -9,6 +9,7 @@ use alloc::raw_vec::RawVec;
 use alloc::allocator::Layout;
 use core;
 use std::cell::Cell;
+use std::intrinsics;
 
 /// A stack-based allocator.
 ///
@@ -66,6 +67,26 @@ use std::cell::Cell;
 /// }
 /// ```
 
+pub struct MemoryChunk {
+    storage: RawVec<u8>,
+    /// Index of the first unused byte.
+    fill: Cell<usize>,
+    /// Indicates whether objects with destructors are stored in this chunk.
+    is_copy: Cell<bool>,
+}
+
+impl MemoryChunk {
+    /// Create a new memory chunk, allocating the given size.
+    pub fn new(size: usize, is_copy: bool) -> Self {
+        MemoryChunk {
+            storage: RawVec::with_capacity(size),
+            fill: Cell::new(0),
+            is_copy: Cell::new(is_copy),
+        }
+    }
+
+
+}
 
 pub struct StackAllocator {
     stack: RawVec<u8>,

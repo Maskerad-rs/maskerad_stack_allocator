@@ -24,6 +24,7 @@
 
 extern crate alloc;
 extern crate core;
+extern crate any_arena;
 
 mod stack_allocator;
 mod double_buffered_allocator;
