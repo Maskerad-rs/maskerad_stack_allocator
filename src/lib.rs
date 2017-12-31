@@ -21,14 +21,20 @@
 #![feature(alloc)]
 #![feature(offset_to)]
 #![feature(allocator_api)]
+#![feature(raw)]
+#![feature(heap_api)]
+#![feature(core_intrinsics)]
+#![feature(shared)]
 
 extern crate alloc;
 extern crate core;
-extern crate any_arena;
 
 mod stack_allocator;
 mod double_buffered_allocator;
 mod double_ended_allocator;
+mod memory_chunk;
+mod stack_allocator_copy;
+mod utils;
 
 pub use stack_allocator::StackAllocator;
 pub use double_buffered_allocator::DoubleBufferedAllocator;

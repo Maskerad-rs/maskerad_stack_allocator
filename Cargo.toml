@@ -18,7 +18,6 @@ is-it-maintained-open-issues = { repository = "Maskerad-rs/maskerad_stack_alloca
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-"any-arena" = "0.0.1"
 
 [dev-dependencies]
 bencher = "0.1.4"

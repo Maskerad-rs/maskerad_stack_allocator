@@ -5,11 +5,27 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use alloc::raw_vec::RawVec;
+/*
+    Huge internal rewrite, based on the any-arena crate.
+
+    The AnyArena is literally a container of stack-allocators, which is able to grow when needed.
+
+    Allow us to :
+    - drop the stuff put into the stack allocator when needed (yay !)
+    - a clearer design
+    - based on the work of people who actually know how to handle low-level stuff in Rust.
+*/
+
+
 use alloc::allocator::Layout;
-use core;
-use std::cell::Cell;
-use std::intrinsics;
+use core::ptr;
+use std::cell::RefCell;
+use alloc::heap;
+use std::mem;
+
+use utils;
+use memory_chunk::MemoryChunk;
+
 
 /// A stack-based allocator.
 ///
@@ -67,34 +83,9 @@ use std::intrinsics;
 /// }
 /// ```
 
-pub struct MemoryChunk {
-    storage: RawVec<u8>,
-    /// Index of the first unused byte.
-    fill: Cell<usize>,
-    /// Indicates whether objects with destructors are stored in this chunk.
-    is_copy: Cell<bool>,
-}
-
-impl MemoryChunk {
-    /// Create a new memory chunk, allocating the given size.
-    pub fn new(size: usize, is_copy: bool) -> Self {
-        MemoryChunk {
-            storage: RawVec::with_capacity(size),
-            fill: Cell::new(0),
-            is_copy: Cell::new(is_copy),
-        }
-    }
-
-
-}
 
 pub struct StackAllocator {
-    stack: RawVec<u8>,
-    //ptr to the stack's "top". Cell gives use interior mutability
-    //(With Reset(&mut self) and alloc(&mut self), we could only allocate 1 time. After that...
-    // error[E0499]: cannot borrow `alloc` as mutable more than once at a time
-    // error[E0502]: cannot borrow `alloc` as immutable because it is also borrowed as mutable
-    current_offset: Cell<*mut u8>,
+    storage_non_copy: RefCell<MemoryChunk>,
 }
 
 
@@ -109,38 +100,9 @@ impl StackAllocator {
     /// assert_eq!(allocator.stack().cap(), 100);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
-        let stack = RawVec::with_capacity(capacity);
-        let current_offset = Cell::new(stack.ptr() as *mut u8);
         StackAllocator {
-            stack,
-            current_offset,
+            storage_non_copy: RefCell::new(MemoryChunk::new(capacity, false)),
         }
-    }
-
-    /// Return an immutable reference to the stack used by the allocator.
-    pub fn stack(&self) -> &RawVec<u8> {
-        &self.stack
-    }
-
-
-    /// Move the pointer from the current top of the stack to the bottom of the stack.
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::StackAllocator;
-    ///
-    /// let allocator = StackAllocator::with_capacity(100);
-    /// let an_i32 = allocator.alloc(25);
-    /// let ptr_top_stack = allocator.marker();
-    ///
-    /// assert_ne!(allocator.stack().ptr(), ptr_top_stack);
-    ///
-    /// allocator.reset();
-    /// let ptr_top_stack = allocator.marker();
-    /// assert_eq!(allocator.stack().ptr(), ptr_top_stack);
-    /// ```
-    pub fn reset(&self) {
-        self.current_offset.set(self.stack.ptr());
     }
 
     /// Allocate data in the allocator's memory, from the current top of the stack.
@@ -156,93 +118,89 @@ impl StackAllocator {
     /// let my_i32 = allocator.alloc(26);
     /// assert_eq!(my_i32, &mut 26);
     /// ```
-    pub fn alloc<T>(&self, value: T) -> &mut T {
-        let layout = Layout::new::<T>(); //is always a power of two.
-        let offset = layout.align() + layout.size();
+    #[inline]
+    pub fn alloc<T, F>(&self, op: F) -> &mut T
+        where F: FnOnce() -> T
+    {
+        self.alloc_non_copy(op)
+    }
 
-        //println!("\nalignment: {}-byte alignment", layout.align());
-        //println!("size: {}", layout.size());
-        //println!("Total amount of memory to allocate: {} bytes", offset);
 
-        //Get the actual stack top. It will be the address returned.
-        let old_stack_top = self.current_offset.get();
-        //println!("address of the current stack top : {:?}", old_stack_top);
 
-        //Determine the total amount of memory to allocate
+    //Functions for the non-copyable part of the arena.
+    #[inline]
+    fn alloc_non_copy<T, F>(&self, op: F) -> &mut T
+        where F: FnOnce() -> T
+    {
         unsafe {
-            //Get the ptr to the unaligned location
-            let unaligned_ptr = old_stack_top.offset(offset as isize) as usize;
-            //println!("unaligned location: {:?}", unaligned_ptr as *mut u8);
+            let type_description = utils::get_type_description::<T>();
+            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>());
+            let type_description_ptr = type_description_ptr as *mut usize;
+            let ptr = ptr as *mut T;
 
-            //Now calculate the adjustment by masking off the lower bits of the address, to determine
-            //how "misaligned" it is.
-            let mask = layout.align() - 1;
-            //println!("mask (alignment - 1): {:#X} ", mask);
-            let misalignment = unaligned_ptr & mask;
-            //println!("misalignment (unaligned ptr addr |bitwise AND| mask): {:#X}", misalignment);
-            let adjustment = layout.align() - misalignment;
-            //println!("adjustment (current alignment - misalignment): {:#X}", adjustment);
+            //write in our type description along with a bit indicating that it has *not*
+            //been initialized yet.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
+            //Initialize it.
+            ptr::write(&mut (*ptr), op());
+            //Now that we are done, update the type description to indicate
+            //that the object is there.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
-            let aligned_ptr = (unaligned_ptr + adjustment) as *mut u8;
-            //println!("aligned ptr (unaligned ptr addr + adjustment): {:?}", aligned_ptr);
-
-            assert!((self.stack.ptr().offset_to(aligned_ptr).unwrap() as usize) < self.stack.cap());
-
-            //Now update the current_offset
-            self.current_offset.set(aligned_ptr);
-
-            //println!("Real amount of memory allocated: {}", offset + adjustment);
-
-            //write the value in the memory location the old_stack_top is pointing.
-            core::ptr::write::<T>(old_stack_top as *mut T, value);
-
-
-            &mut *(old_stack_top as *mut T)
+            &mut *ptr
         }
     }
 
-    ///Return a pointer to the current top of the stack.
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::StackAllocator;
-    ///
-    /// let allocator = StackAllocator::with_capacity(100);
-    /// let ptr_top_stack = allocator.marker();
-    ///
-    /// // allocator.stack().ptr() return a pointer to the start of the allocation (the bottom of the stack).
-    /// // Nothing has been allocated on the stack, the top of the stack is at the bottom.
-    /// assert_eq!(allocator.stack().ptr(), ptr_top_stack);
-    /// ```
-    pub fn marker(&self) -> *mut u8 {
-        self.current_offset.get()
+    #[inline]
+    fn alloc_non_copy_inner(&self, n_bytes: usize, align: usize) -> (*const u8, *const u8) {
+        let mut non_copy_storage = self.storage_non_copy.borrow_mut();
+        let fill = non_copy_storage.fill();
+
+        let mut type_description_start = fill;
+        let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
+        let mut start = utils::round_up(after_type_description, align);
+        let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
+
+        assert!(end <= non_copy_storage.capacity());
+
+        non_copy_storage.set_fill(end);
+
+        unsafe {
+            let start_storage = non_copy_storage.as_ptr();
+
+            (
+                start_storage.offset(type_description_start as isize),
+                start_storage.offset(start as isize)
+            )
+        }
     }
 
-    /// Move the pointer from the current top of the stack to a marker.
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::StackAllocator;
-    ///
-    /// let allocator = StackAllocator::with_capacity(100);
-    /// let ptr_bottom = allocator.marker(); // bottom of the stack.
-    /// assert_eq!(allocator.stack().ptr(), ptr_bottom);
-    ///
-    /// let an_i32 = allocator.alloc(25);
-    /// // top of the stack after one allocation.
-    /// let ptr_one_alloc = allocator.marker();
-    /// assert_ne!(allocator.stack().ptr(), ptr_one_alloc);
-    ///
-    /// // The current top of the stack is now at the bottom.
-    /// allocator.reset_to_marker(ptr_bottom);
-    /// let ptr_bottom = allocator.marker();
-    /// assert_eq!(allocator.stack().ptr(), ptr_bottom);
-    /// ```
-    pub fn reset_to_marker(&self, marker: *mut u8) {
-        self.current_offset.set(marker);
+    pub fn marker(&self) -> usize {
+        self.storage_non_copy.borrow_mut().fill()
+    }
+
+    pub fn reset(&self) {
+        unsafe {
+            self.storage_non_copy.borrow().destroy();
+            self.storage_non_copy.borrow().set_fill(0);
+        }
+    }
+
+    pub fn reset_to_marker(&self, marker: usize) {
+        unsafe {
+            self.storage_non_copy.borrow().destroy_to_marker(marker);
+            self.storage_non_copy.borrow().set_fill(marker);
+        }
     }
 }
 
+impl Drop for StackAllocator {
+    fn drop(&mut self) {
+        unsafe {
+            self.storage_non_copy.borrow().destroy();
+        }
+    }
+}
 
 #[cfg(test)]
 mod stack_allocator_test {
