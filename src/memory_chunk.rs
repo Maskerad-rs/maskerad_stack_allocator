@@ -11,49 +11,59 @@ use core::mem;
 
 use utils;
 
+/// The MemoryChunk is a just a chunk of memory.
+/// It uses a [RawVec](https://doc.rust-lang.org/alloc/raw_vec/struct.RawVec.html) to allocate bytes
+/// in a vector-like fashion.
+///
+/// This structure allows you allocate data of different type in the same storage, since :
+///
+/// - The chunk knows the location of the first unused byte in its memory storage, and update it when allocation occurs or
+/// when objects in the memory chunk are dropped.
+///
+/// - The chunk extracts some info about the type (its virtual table) and place it next to the object. The chunk is able to call the drop method of the object
+/// with the virtual table.
+///
 pub struct MemoryChunk {
     storage: RawVec<u8>,
     /// Index of the first unused byte.
     fill: Cell<usize>,
-    /// Indicates whether objects with destructors are stored in this chunk.
-    is_copy: Cell<bool>,
 }
 
 impl MemoryChunk {
-    /// Create a new memory chunk, allocating the given size.
-    pub fn new(size: usize, is_copy: bool) -> Self {
+    /// Creates a new memory chunk, allocating the given number of bytes.
+    pub fn new(size: usize) -> Self {
         MemoryChunk {
             storage: RawVec::with_capacity(size),
             fill: Cell::new(0),
-            is_copy: Cell::new(is_copy),
         }
     }
 
+    /// Returns the index of the first unused byte in the memory storage of the chunk.
     pub fn fill(&self) -> usize {
         self.fill.get()
     }
 
+    /// Set the index of the first unused byte in the memory storage of the chunk.
     pub fn set_fill(&self, first_unused_byte: usize) {
         self.fill.set(first_unused_byte)
     }
 
-    pub fn is_copy(&self) -> bool {
-        self.is_copy.get()
-    }
-
+    /// Returns the maximal number of bytes the chunk can store.
     pub fn capacity(&self) -> usize {
         self.storage.cap()
     }
 
-    pub unsafe fn as_ptr(&self) -> *const u8 {
+    /// Returns a pointer to the start of the memory storage used by the chunk.
+    pub fn as_ptr(&self) -> *const u8 {
         self.storage.ptr()
     }
 
-    //Walk down the chunk, running the destructors for any objects stored in it.
+    /// Drop all the data contained in the chunk.
     pub unsafe fn destroy(&self) {
         self.destroy_to_marker(0);
     }
 
+    /// Drop the data contained in the chunk, starting from the given marker.
     pub unsafe fn destroy_to_marker(&self, marker: usize) {
         let mut index = marker;
         let storage_start = self.as_ptr();

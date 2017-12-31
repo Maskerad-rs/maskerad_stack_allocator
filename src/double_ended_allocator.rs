@@ -378,7 +378,6 @@ impl DoubleEndedAllocator {
 #[cfg(test)]
 mod stack_allocator_test {
     use super::*;
-    extern crate time;
 
     #[test]
     fn creation_with_right_capacity() {

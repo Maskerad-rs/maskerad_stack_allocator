@@ -13,12 +13,22 @@ use std::mem;
 // Requirements:
 // * rvalue promotion (issue #1056)
 // * mem::{size_of, align_of} must be const fns
+/// A Structure holding the function pointer to the drop implementation, the size and the alignment
+/// of a given type T.
 pub struct TypeDescription {
     pub drop_glue: fn(*const i8),
     pub size: usize,
     pub alignment: usize,
 }
 
+/// Returns a constant raw pointer to a TypeDescription structure, from a given T.
+///
+/// # implementation details
+///
+/// This function create a raw pointer to the T type, and transmute it to a [TraitObject](https://doc.rust-lang.org/std/raw/struct.TraitObject.html)
+/// structure.
+///
+/// The virtual table (*mut ()) of this pointer is then cast to a constant raw pointer to a TypeDescription structure, and returned.
 pub unsafe fn get_type_description<T>() -> *const TypeDescription {
     use std::raw::TraitObject;
 
@@ -43,17 +53,85 @@ pub unsafe fn get_type_description<T>() -> *const TypeDescription {
 // initialized in the arena in the low bit of the tydesc pointer. This
 // is necessary in order to properly do cleanup if a panic occurs
 // during an initializer.
+/// Encode whether the object (described by a TypeDescription) has been initialized in the StackAllocator
+/// in the low bit of the TypeDescription pointer.
+///
+/// This is necessary in order to properly do cleanup if a panic occurs during an initializer.
 #[inline]
 pub fn bitpack_type_description_ptr(p: *const TypeDescription, is_done: bool) -> usize {
     p as usize | (is_done as usize)
 }
+
+/// Decode the given memory location, extracting:
+///
+/// - the TypeDescription of the object residing in this memory location.
+///
+/// - Whether or not the object has been initialized.
+///
+///
+/// This is reciprocal of bitpack_type_description_ptr.
+
 #[inline]
 pub fn un_bitpack_type_description_ptr(p: usize) -> (*const TypeDescription, bool) {
     ((p & !1) as *const TypeDescription, p & 1 == 1)
 }
+
+/// Returns an aligned memory location, given a starting memory location and an alignment.
+///
+/// # Explanation
+///
+/// Every data has an alignment requirement:
+///
+/// - **8-bit data** (1 bytes, u8 for example) can be aligned to every address in memory.
+///
+/// - **32-bit data** (4 bytes, u32 for example) must be 4-byte aligned. Its memory address must finish
+/// with 0x0, 0x4, 0x8 or 0xC.
+///
+/// - **128-bit data** (16 bytes) must be 16-byte aligned. Its memory address must finish with 0x0.
+///
+///
+/// To return **aligned** memory blocks, you just allocate a little bit more memory than requested,
+/// adjust the address of the memory block upward, and return the address. Even with the small upward offset,
+/// the returned block of memory will still be large enough, since we allocated a bit more memory than requested.
+///
+/// In general, the number of additional bytes allocated equals the alignment of the data.
+///
+/// To know the amount by which the block of memory must be adjusted we:
+///
+/// - create a mask: alignment - 1.
+///
+/// - mask the least significant byte of the original memory address, to get the misalignment: original_address & mask.
+///
+/// - calculate the adjustment, according to the misalignment: alignment - misalignment.
+///
+/// - Add the adjustment to the original memory address, to get an aligned memory location: original_address + adjustment.
+///
+/// # Example
+///
+/// original_address: 0x60758912.
+///
+/// alignment: 4 = 0x00000004. **4-byte** aligned data.
+///
+/// mask: 4 - 1 = 3 = 0x00000003.
+///
+/// misalignment: 0x60758912 & 0x00000003 = 0x00000002.
+///
+/// adjustment: 0x00000004 - 0x00000002 = 0x00000002.
+///
+/// aligned_address: 0x60758912 + 0x00000002 = 0x60758914.
+///
+/// **4-byte** aligned data must reside in memory addresses finishing by 0x0, 0x4, 0x8 and 0xC. Our
+/// aligned_address is properly aligned !
+///
 #[inline]
 pub fn round_up(base: usize, align: usize) -> usize {
-    (base.checked_add(align - 1)).unwrap() & !(align - 1)
+    //(base.checked_add(align - 1)).unwrap() & !(align - 1)
+    //The solution above works, but our solution is easier to understand and faster.
+
+    let misalignment = base & (align - 1);
+    let adjustment = align - misalignment;
+
+    base + adjustment
 }
 
 trait AllTypes {
@@ -61,3 +139,41 @@ trait AllTypes {
 }
 
 impl<T: ?Sized> AllTypes for T {}
+
+#[cfg(test)]
+mod utils_tests {
+    use super::*;
+    use std::time;
+
+    //last test:
+    //With base.checked_add... -> 0.000000232 sec
+    //With the other -> 0.000000049 sec
+
+    /*
+    #[test]
+    fn test_speed_round_up() {
+        let base: usize = 5487; //random memory loc.
+        let align: usize = 4; //4 byte alignment.
+
+        let before = time::Instant::now();
+        let aligned_loc = (base.checked_add(align - 1)).unwrap() & !(align - 1);
+        let after = time::Instant::now();
+        let elapsed = after.duration_since(before);
+
+        println!("took {} sec", elapsed.as_secs() as f64
+            + elapsed.subsec_nanos() as f64 * 1e-9);
+
+        let before = time::Instant::now();
+        let misalignment = base & (align - 1);
+        let adjustment = align - misalignment;
+        let aligned_loc = base + adjustment;
+        let after = time::Instant::now();
+        let elapsed = after.duration_since(before);
+
+        println!("took {} sec", elapsed.as_secs() as f64
+            + elapsed.subsec_nanos() as f64 * 1e-9);
+
+        panic!();
+    }
+    */
+}

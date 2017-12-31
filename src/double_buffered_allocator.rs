@@ -72,64 +72,50 @@ impl DoubleBufferedAllocator {
         }
     }
 
+    ///Allocate data in the active buffer.
+    ///
+    /// # Panic
+    /// This function will panic if the allocation exceeds the maximum storage capacity of the active allocator.
+    ///
+    pub fn alloc<T, F>(&self, op: F) -> &mut T
+        where F: FnOnce() -> T
+    {
+        self.active_buffer().alloc(op)
+    }
+
+    pub fn reset(&self) {
+        self.active_buffer().reset();
+    }
+
+    pub fn reset_to_marker(&self, marker: usize) {
+        self.active_buffer().reset_to_marker(marker);
+    }
+
+    pub fn marker(&self) -> usize {
+        self.active_buffer().marker()
+    }
+
     /// Return an immutable reference to the active StackAllocator.
+    ///
+    /// Most of the time, you should not have to access the stack allocators directly.
+    /// This structure mimics the StackAllocator's API and have the swap_buffers() function to swap
+    /// the active allocator to the inactive one, and vice-versa.
     pub fn active_buffer(&self) -> &StackAllocator {
         &self.buffers[self.current as usize]
     }
 
     /// Return an immutable reference to the inactive StackAllocator.
+    ///
+    /// Most of the time, you should not have to access the stack allocators directly.
+    /// This structure mimics the StackAllocator's API and have the swap_buffers() function to swap
+    /// the active allocator to the inactive one, and vice-versa.
     pub fn inactive_buffer(&self) -> &StackAllocator {
         &self.buffers[!self.current as usize]
-    }
-
-    /// Reset the pointer of the active StackAllocator, from the current top of its stack to the bottom of its stack.
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleBufferedAllocator;
-    ///
-    /// let allocator = DoubleBufferedAllocator::with_capacity(100);
-    ///
-    /// let my_i32 = allocator.alloc(26);
-    /// let active_buffer_top_stack = allocator.active_buffer().marker();
-    /// let inactive_buffer_top_stack = allocator.inactive_buffer().marker();
-    ///
-    /// assert_eq!(allocator.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
-    /// assert_ne!(allocator.active_buffer().stack().ptr(), active_buffer_top_stack);
-    ///
-    /// allocator.reset_current();
-    /// let active_buffer_top_stack = allocator.active_buffer().marker();
-    /// let inactive_buffer_top_stack = allocator.inactive_buffer().marker();
-    ///
-    /// assert_eq!(allocator.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
-    /// assert_eq!(allocator.active_buffer().stack().ptr(), active_buffer_top_stack);
-    /// ```
-    pub fn reset_current(&self) {
-        self.buffers[self.current as usize].reset();
     }
 
     /// Swap the buffers. The inactive one becomes the active.
     pub fn swap_buffers(&mut self) {
         self.current = !self.current;
-    }
-
-    /// Allocate data in the active allocator's memory, from the current top of its stack.
-    ///
-    /// # Panics
-    /// This function will panic if the current length of the active allocator + the size of the allocated object
-    /// exceed the allocator's capacity.
-    ///
-    /// # Example
-    /// ```
-    /// use maskerad_stack_allocator::DoubleBufferedAllocator;
-    ///
-    /// let allocator = DoubleBufferedAllocator::with_capacity(100);
-    ///
-    /// let my_i32 = allocator.alloc(26);
-    /// assert_eq!(my_i32, &mut 26);
-    /// ```
-    pub fn alloc<T>(&self, value: T) -> &mut T {
-        self.buffers[self.current as usize].alloc(value)
     }
 }
 
@@ -138,51 +124,121 @@ impl DoubleBufferedAllocator {
 mod double_buffer_allocator_test {
     use super::*;
 
+    //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
+    struct Monster {
+        hp :u32,
+        level: u32,
+    }
+
+    impl Monster {
+        pub fn new(hp: u32, level: u32) -> Self {
+            Monster {
+                hp: 1,
+                level: 1,
+            }
+        }
+    }
+
+    impl Default for Monster {
+        fn default() -> Self {
+            Monster {
+                hp: 1,
+                level: 1,
+            }
+        }
+    }
+
+    impl Drop for Monster {
+        fn drop(&mut self) {
+            println!("I'm dying !");
+        }
+    }
+
     #[test]
     fn new() {
         let alloc = DoubleBufferedAllocator::with_capacity(100);
-        assert_eq!(alloc.active_buffer().stack().cap(), 100);
-        assert_eq!(alloc.inactive_buffer().stack().cap(), 100);
+        assert_eq!(alloc.active_buffer().storage().borrow().capacity(), 100);
+        assert_eq!(alloc.inactive_buffer().storage().borrow().capacity(), 100);
     }
 
     #[test]
     fn reset() {
         let alloc = DoubleBufferedAllocator::with_capacity(100);
-        let active_buffer_top_stack = alloc.active_buffer().marker();
-        let inactive_buffer_top_stack = alloc.inactive_buffer().marker();
 
-        assert_eq!(alloc.active_buffer().stack().ptr(), active_buffer_top_stack);
-        assert_eq!(alloc.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
+        let start_chunk_active_buffer = alloc.active_buffer().storage().borrow().as_ptr();
+        let start_chunk_inactive_buffer = alloc.inactive_buffer().storage().borrow().as_ptr();
 
-        let my_i32 = alloc.alloc(25);
-        let active_buffer_top_stack = alloc.active_buffer().marker();
-        let inactive_buffer_top_stack = alloc.inactive_buffer().marker();
+        let index_active_buffer_top_stack = alloc.active_buffer().marker();
+        let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
 
-        assert_ne!(alloc.active_buffer().stack().ptr(), active_buffer_top_stack);
-        assert_eq!(alloc.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
+        unsafe {
+            let active_buffer_top_stack = start_chunk_active_buffer.offset(index_active_buffer_top_stack as isize);
+            let inactive_buffer_top_stack = start_chunk_inactive_buffer.offset(index_inactive_buffer_top_stack as isize);
 
-        alloc.reset_current();
-        let active_buffer_top_stack = alloc.active_buffer().marker();
-        let inactive_buffer_top_stack = alloc.inactive_buffer().marker();
+            assert_eq!(start_chunk_active_buffer, active_buffer_top_stack);
+            assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
+        }
 
-        assert_eq!(alloc.active_buffer().stack().ptr(), active_buffer_top_stack);
-        assert_eq!(alloc.inactive_buffer().stack().ptr(), inactive_buffer_top_stack);
+        let my_monster = alloc.alloc(|| {
+            Monster::default()
+        });
+
+        let index_active_buffer_top_stack = alloc.active_buffer().marker();
+        let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
+
+        unsafe {
+            let active_buffer_top_stack = start_chunk_active_buffer.offset(index_active_buffer_top_stack as isize);
+            let inactive_buffer_top_stack = start_chunk_inactive_buffer.offset(index_inactive_buffer_top_stack as isize);
+
+            assert_ne!(start_chunk_active_buffer, active_buffer_top_stack);
+            assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
+        }
+
+        alloc.reset();
+        let index_active_buffer_top_stack = alloc.active_buffer().marker();
+        let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
+
+        unsafe {
+            let active_buffer_top_stack = start_chunk_active_buffer.offset(index_active_buffer_top_stack as isize);
+            let inactive_buffer_top_stack = start_chunk_inactive_buffer.offset(index_inactive_buffer_top_stack as isize);
+
+            assert_eq!(start_chunk_active_buffer, active_buffer_top_stack);
+            assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
+        }
     }
 
     #[test]
     fn swap() {
         let mut alloc = DoubleBufferedAllocator::with_capacity(100);
-        let first_buffer_top_stack = alloc.buffers[0].marker();
-        let second_buffer_top_stack = alloc.buffers[1].marker();
+        let start_chunk_first_buffer = alloc.buffers[0].storage().borrow().as_ptr();
+        let start_chunk_second_buffer = alloc.buffers[1].storage().borrow().as_ptr();
 
-        assert_eq!(alloc.buffers[0].stack().ptr(), first_buffer_top_stack);
-        assert_eq!(alloc.buffers[1].stack().ptr(), second_buffer_top_stack);
+        let index_first_buffer_top_stack = alloc.buffers[0].marker();
+        let index_second_buffer_top_stack = alloc.buffers[1].marker();
+
+        unsafe {
+            let first_buffer_top_stack = start_chunk_first_buffer.offset(index_first_buffer_top_stack as isize);
+            let second_buffer_top_stack = start_chunk_second_buffer.offset(index_second_buffer_top_stack as isize);
+
+            assert_eq!(start_chunk_first_buffer, first_buffer_top_stack);
+            assert_eq!(start_chunk_second_buffer, second_buffer_top_stack);
+        }
+
+
+
         alloc.swap_buffers();
-        let my_i32 = alloc.alloc(25);
-        let first_buffer_top_stack = alloc.buffers[0].marker();
-        let second_buffer_top_stack = alloc.buffers[1].marker();
+        let my_i32 = alloc.alloc(|| {
+            25
+        });
+        let index_first_buffer_top_stack = alloc.buffers[0].marker();
+        let index_second_buffer_top_stack = alloc.buffers[1].marker();
 
-        assert_eq!(alloc.buffers[0].stack().ptr(), first_buffer_top_stack);
-        assert_ne!(alloc.buffers[1].stack().ptr(), second_buffer_top_stack);
+        unsafe {
+            let first_buffer_top_stack = start_chunk_first_buffer.offset(index_first_buffer_top_stack as isize);
+            let second_buffer_top_stack = start_chunk_second_buffer.offset(index_second_buffer_top_stack as isize);
+
+            assert_eq!(start_chunk_first_buffer, first_buffer_top_stack);
+            assert_ne!(start_chunk_second_buffer, second_buffer_top_stack);
+        }
     }
 }
