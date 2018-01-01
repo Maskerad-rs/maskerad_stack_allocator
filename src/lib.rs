@@ -7,11 +7,18 @@
 
 //! This library provides:
 //!
-//! - a **stack-based** allocator,
+//! - a **stack-based** allocator for data implementing the **Drop** trait,
 //!
-//! - a **double-ended stack-based** allocator,
+//! - a **double-ended** allocator for data implementing the **Drop** trait,
 //!
-//! - and a **double-buffered** stack allocator
+//! - a **double-buffered** stack allocator for data implementing the **Drop** trait,
+//!
+//!
+//! - a **stack-based** allocator for data implementing the **Copy** trait,
+//!
+//! - a **double-ended** allocator for data implementing the **Copy** trait,
+//!
+//! - a **double-buffered** stack allocator for data implementing the **Copy** trait,
 //!
 //!
 //! Its primary purpose is to prevent memory fragmentation.
@@ -33,6 +40,7 @@ mod stack_allocator;
 mod double_buffered_allocator;
 mod double_ended_allocator;
 mod memory_chunk;
+mod double_ended_memory_chunk;
 mod stack_allocator_copy;
 pub mod utils;
 mod double_buffered_allocator_copy;
@@ -42,4 +50,4 @@ pub use stack_allocator_copy::StackAllocatorCopy;
 pub use memory_chunk::MemoryChunk;
 pub use double_buffered_allocator::DoubleBufferedAllocator;
 pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
-pub use double_ended_allocator::DoubleEndedAllocator;
+pub use double_ended_allocator::DoubleEndedStackAllocator;

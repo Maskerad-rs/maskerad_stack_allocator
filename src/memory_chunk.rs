@@ -79,7 +79,7 @@ impl MemoryChunk {
         //We'll stop dropping the content when we are at this location.
         let fill = self.fill.get();
 
-        //While the starting index isn't the ending one...
+        //While the starting index is inferior to the ending one...
         while index < fill {
 
             //Get a raw pointer on the TypeDescription of the object.

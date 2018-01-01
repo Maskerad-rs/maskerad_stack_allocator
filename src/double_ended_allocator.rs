@@ -5,35 +5,67 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use alloc::raw_vec::RawVec;
-use alloc::allocator::Layout;
-use core;
-use std::cell::Cell;
+/*
+    Huge internal rewrite, based on the any-arena crate.
 
-/// A double-ended stack-based allocator.
+    The AnyArena is literally a container of stack-allocators, which is able to grow when needed.
+
+    Allow us to :
+    - drop the stuff put into the stack allocator when needed (yay !)
+    - have a clearer design
+    - base our work on the work of people who actually know how to handle low-level stuff in Rust.
+*/
+
+
+use alloc::allocator::Layout;
+use core::ptr;
+use std::cell::RefCell;
+use alloc::heap;
+use std::mem;
+
+use utils;
+use double_ended_memory_chunk::{ChunkStartPosition, DoubleEndedMemoryChunk};
+
+
+/// A double-ended allocator for data implementing the Drop trait.
 ///
-/// It uses a [RawVec](https://doc.rust-lang.org/alloc/raw_vec/struct.RawVec.html) to allocate bytes in a vector-like fashion
-/// and two pointers: One pointing to the bottom of the stack, the other to the top of the stack.
+/// It manages a non-copy DoubleEndedMemoryChunk to:
 ///
-/// When instantiated, one pointer is at the bottom of the stack, the other at the top of the stack.
+/// - Allocate bytes in a stack-like fashion, from both ends.
 ///
-/// When an object is allocated in memory, a pointer to the current top of the stack is returned and
-/// a pointer, depending from which end the object was allocated, to the current top of the stack is moved according to an offset.
+/// - Store different types of objects in the same storage.
 ///
-/// This offset is calculated by the size of the object, its memory-alignment and an offset to align the object in memory.
+/// - Drop the content of the MemoryChunk when needed.
 ///
-/// When the allocator is reset, a pointer, depending from which end was reset, to the top of the stack is moved to its *bottom* of the stack. Allocation will occur
-/// from its *bottom* of the stack and will override previously allocated memory.
 ///
-/// # Be careful
+/// When instantiated, the memory chunk pre-allocate the given number of bytes.
 ///
-/// This allocator is **dropless**: memory is never *really* freed. You must guarantee that, when overriding memory, this memory was not used.
+/// When an object is allocated in memory, the StackAllocator:
+///
+/// - Asks a pointer to a memory address to its memory chunk,
+///
+/// - Place the object in this memory address,
+///
+/// - Update the first unused memory address of the memory chunk according to an offset,
+///
+/// - And return a mutable reference to the object which has been placed in the memory chunk.
+///
+///
+///
+/// This offset is calculated by the size of the object, the size of a TypeDescription structure, its memory-alignment and an offset to align the object in memory.
+///
+/// This structure allows you to get a **marker**, the index to the first unused memory address of the memory chunk. A stack allocator can be *reset* to a marker,
+/// or reset entirely.
+///
+/// When the allocator is reset to a marker, the memory chunk will drop all the content lying between the marker and the first unused memory address,
+/// and set the first unused memory address to the marker.
+///
+/// When the allocator is reset completely, the memory chunk will drop everything and set the first unused memory address to the bottom of its stack.
 ///
 /// # Example
 ///
 /// ```
-/// #![feature(alloc)]
-/// use maskerad_stack_allocator::DoubleEndedAllocator;
+/// use maskerad_stack_allocator::StackAllocator;
 ///
 /// struct Monster {
 ///     hp :u32,
@@ -49,457 +81,491 @@ use std::cell::Cell;
 ///     }
 /// }
 ///
-/// //This allocator is like the StackAllocator, but the operations can be applied from the
-/// //bottom AND the top of the stack.
+/// let single_frame_allocator = StackAllocator::with_capacity(100); //100 bytes
+/// let mut closed = false;
 ///
-/// //Bear in mind that if you allocated 100 bytes, you can allocate up to 50 bytes from the bottom and up to 50 bytes from the top.
+/// while !closed {
+///     // The allocator is cleared every frame.
+///     // (The pointer to the current top of the stack goes back to the bottom).
+///     single_frame_allocator.reset();
 ///
-/// let allocator = DoubleEndedAllocator::with_capacity(100); //100 bytes
+///     //...
 ///
-/// //get a pointer to the top of the stack
-/// let top_of_stack = allocator.marker_top();
+///     //allocate from the single frame allocator.
+///     //Be sure to use the data during this frame only!
+///     let my_monster = single_frame_allocator.alloc(|| {
+///         Monster::default()
+///     });
 ///
-/// //We can allocate from both sides.
-/// let a_monster = allocator.alloc_bottom(Monster::default());
-/// let another_monster = allocator.alloc_top(Monster::default());
-///
-/// //We can get pointers to the current top of the stack, from both sides.
-/// let current_ptr_bottom = allocator.marker_bottom();
-/// let current_ptr_top = allocator.marker_top();
-///
-/// assert_ne!(top_of_stack, current_ptr_top);
-/// assert_ne!(allocator.stack().ptr(), current_ptr_bottom);
-///
-/// //we can reset the pointers, from both sides.
-/// allocator.reset_top();
-/// allocator.reset_bottom();
-///
-/// let current_ptr_bottom = allocator.marker_bottom();
-/// let current_ptr_top = allocator.marker_top();
-///
-/// assert_eq!(top_of_stack, current_ptr_top);
-/// assert_eq!(allocator.stack().ptr(), current_ptr_bottom);
-///
+///     assert_eq!(my_monster.level, 1);
+///     closed = true;
+/// }
 /// ```
 
 
-pub struct DoubleEndedAllocator {
-    stack: RawVec<u8>,
-    //ptr to the stack's "top". Cell gives use interior mutability
-    //(With Reset(&mut self) and alloc(&mut self), we could only allocate 1 time. After that...
-    // error[E0499]: cannot borrow `alloc` as mutable more than once at a time
-    // error[E0502]: cannot borrow `alloc` as immutable because it is also borrowed as mutable
-    current_offset_top: Cell<*mut u8>,
-    current_offset_bottom: Cell<*mut u8>,
+pub struct DoubleEndedStackAllocator {
+    storage: RefCell<DoubleEndedMemoryChunk>,
 }
 
 
-impl DoubleEndedAllocator {
-    /// Create a DoubleEndedAllocator with the given capacity (in bytes).
+impl DoubleEndedStackAllocator {
+    /// Creates a DoubleEndedStackAllocator with the given capacity, in bytes.
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
+    /// use maskerad_stack_allocator::StackAllocator;
     ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    /// assert_eq!(allocator.stack().cap(), 100);
+    /// let allocator = StackAllocator::with_capacity(100);
+    /// assert_eq!(allocator.storage().borrow().capacity(), 100);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
+        DoubleEndedStackAllocator {
+            storage: RefCell::new(DoubleEndedMemoryChunk::new(capacity)),
+        }
+    }
 
-        //it is guaranteed that the offset will not cause overflow.
+    /// Returns an immutable reference to the memory chunk used by the allocator.
+    pub fn storage(&self) -> &RefCell<DoubleEndedMemoryChunk> {
+        &self.storage
+    }
+
+    /// Allocates data in the allocator's memory.
+    ///
+    /// # Panics
+    /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    ///
+    /// let my_i32 = allocator.alloc(|| {
+    ///     26 as i32
+    /// });
+    /// assert_eq!(my_i32, &mut 26);
+    /// ```
+    #[inline]
+    pub fn alloc<T, F>(&self, chunk_start_position: &ChunkStartPosition, op: F) -> &mut T
+        where F: FnOnce() -> T
+    {
+        self.alloc_non_copy(chunk_start_position, op)
+    }
+
+
+
+    //Functions for the non-copyable part of the arena.
+
+    /// The function actually writing data in the memory chunk
+    #[inline]
+    fn alloc_non_copy<T, F>(&self, chunk_start_position: &ChunkStartPosition, op: F) -> &mut T
+        where F: FnOnce() -> T
+    {
         unsafe {
-            let stack: RawVec<u8> = RawVec::with_capacity(capacity);
-            let current_offset_bottom = Cell::new(stack.ptr() as *mut u8);
-            let current_offset_top = Cell::new(stack.ptr().offset(capacity as isize) as *mut u8);
+            //Get the type description of the type T (get its vtable).
+            let type_description = utils::get_type_description::<T>();
+
+            //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(chunk_start_position, mem::size_of::<T>(), mem::align_of::<T>());
+
+            //Cast them.
+            let type_description_ptr = type_description_ptr as *mut usize;
+            let ptr = ptr as *mut T;
+
+            //write in our type description along with a bit indicating that the object has *not*
+            //been initialized yet.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
+
+            //Initialize the object.
+            ptr::write(&mut (*ptr), op());
+
+            //Now that we are done, update the type description to indicate
+            //that the object is there.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
+
+            //Return a mutable reference to the object.
+            &mut *ptr
+        }
+    }
+
+    /// The function asking the memory chunk to give us raw pointers to memory locations and update
+    /// the current top of the stack.
+    #[inline]
+    fn alloc_non_copy_inner(&self, chunk_start_position: &ChunkStartPosition, n_bytes: usize, align: usize) -> (*const u8, *const u8) {
+        //mutably borrow the memory chunk.
+        let mut non_copy_storage = self.storage.borrow_mut();
+
+        //Get the index of the first unused byte in the memory chunk.
+        let fill = non_copy_storage.fill(chunk_start_position);
+
+        //Get the index of where We'll write the type description data
+        //(the first unused byte in the memory chunk).
+        let mut type_description_start = fill;
+
+        // Get the index of where the object should reside (unaligned location actually).
+        let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
+
+        //With the index to the unaligned memory address, determine the index to
+        //the aligned memory address where the object will reside,
+        //according to its memory alignment.
+        let mut start = utils::round_up(after_type_description, align);
+
+        //Determine the index of the next aligned memory address for a type description, according the the size of the object
+        //and the memory alignment of a type description.
+        let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
 
-            DoubleEndedAllocator {
-                stack,
-                current_offset_bottom,
-                current_offset_top,
+        //If the user chose...
+        match chunk_start_position {
+            //...to start from the middle of the stack...
+            &ChunkStartPosition::Middle => {
+                //...then the program will abort if the index of the next aligned memory address for
+                //a type description is superior or equal to the max capacity of the stack.
+                assert!(end < non_copy_storage.capacity());
+            },
+            //...to start from the bottom of the stack...
+            &ChunkStartPosition::Bottom => {
+                //...then the program will abort if the index of the next aligned memory address for
+                //a type description is superior or equal to half the max capacity of the stack.
+                assert!(end < (non_copy_storage.capacity() / 2));
+            },
+        }
+
+
+        //Update the current top of the stack.
+        //The first unused memory address is at index 'end',
+        //where the next type description would be written
+        //if an allocation was asked.
+        non_copy_storage.set_fill(chunk_start_position, end);
+
+        unsafe {
+            // Get a raw pointer to the start of our MemoryChunk's RawVec
+            let start_storage = non_copy_storage.as_ptr(chunk_start_position);
+
+            (
+                //From this raw pointer, get the correct raw pointers with
+                //the indexes we calculated earlier.
+
+                //The raw pointer to the type description of the object.
+                start_storage.offset(type_description_start as isize),
+
+                //The raw pointer to the object.
+                start_storage.offset(start as isize)
+            )
+        }
+    }
+
+    /// Returns the index of the first unused memory address.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100); //100 bytes
+    ///
+    /// //Get the raw pointer to the bottom of the allocator's memory chunk.
+    /// let start_allocator = allocator.storage().borrow().as_ptr();
+    ///
+    /// //Get the index of the first unused memory address.
+    /// let index_current_top = allocator.marker();
+    ///
+    /// //Calling offset() on a raw pointer is an unsafe operation.
+    /// unsafe {
+    ///     //Get the raw pointer, with the index.
+    ///     let current_top = start_allocator.offset(index_current_top as isize);
+    ///
+    ///     //Nothing has been allocated in the allocator,
+    ///     //the top of the stack is the bottom of the allocator's memory chunk.
+    ///     assert_eq!(current_top, start_allocator);
+    /// }
+    ///
+    /// ```
+    pub fn marker(&self, chunk_start_position: &ChunkStartPosition) -> usize {
+        self.storage.borrow_mut().fill(chunk_start_position)
+    }
+
+    /// Reset the allocator, dropping all the content residing inside it.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// struct Monster {
+    ///     hp :u32,
+    /// }
+    ///
+    /// impl Default for Monster {
+    ///     fn default() -> Self {
+    ///         Monster {
+    ///         hp: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Monster {
+    ///     fn drop(&mut self) {
+    ///         println!("Monster is dying !");
+    ///     }
+    /// }
+    ///
+    /// struct Dragon {
+    ///     level: u8,
+    /// }
+    ///
+    /// impl Default for Dragon {
+    ///     fn default() -> Self {
+    ///         Dragon {
+    ///             level: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Dragon {
+    ///     fn drop(&mut self) {
+    ///         println!("Dragon is dying !");
+    ///     }
+    /// }
+    ///
+    /// let allocator = StackAllocator::with_capacity(100); // 100 bytes.
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// let my_monster = allocator.alloc(|| {
+    ///     Monster::default()
+    /// });
+    /// assert_ne!(allocator.marker(), 0);
+    ///
+    /// let my_dragon = allocator.alloc(|| {
+    ///     Dragon::default()
+    /// });
+    ///
+    /// allocator.reset();
+    ///
+    /// //The allocator has been totally reset, and all its content has been dropped.
+    /// //my_monster has printed "Monster is dying!".
+    /// //my_dragon has printed "Dragon is dying!".
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// ```
+    pub fn reset(&self, start_chunk_position: &ChunkStartPosition) {
+        unsafe {
+            self.storage.borrow().destroy_end(start_chunk_position);
+
+            match start_chunk_position {
+                &ChunkStartPosition::Bottom => {
+                    self.storage.borrow().set_fill(start_chunk_position, 0);
+                },
+                &ChunkStartPosition::Middle => {
+                    self.storage.borrow().set_fill(start_chunk_position, self.storage.borrow().capacity() / 2);
+                },
             }
         }
-
-    }
-
-    /// Return an immutable reference to the stack used by the allocator.
-    pub fn stack(&self) -> &RawVec<u8> {
-        &self.stack
     }
 
 
-    /// Move the pointer from the current top of the stack to the bottom of the stack (pointer allocating from the bottom).
+
+    /// Reset partially the allocator, dropping all the content residing between the marker and
+    /// the first unused memory address of the allocator.
+    ///
     /// # Example
     /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
+    /// use maskerad_stack_allocator::StackAllocator;
     ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    /// let an_i32 = allocator.alloc_bottom(25);
-    /// let ptr_top_stack = allocator.marker_bottom();
+    /// struct Monster {
+    ///     hp :u32,
+    /// }
     ///
-    /// assert_ne!(allocator.stack().ptr(), ptr_top_stack);
+    /// impl Default for Monster {
+    ///     fn default() -> Self {
+    ///         Monster {
+    ///         hp: 1,
+    ///         }
+    ///     }
+    /// }
     ///
-    /// allocator.reset_bottom();
-    /// let ptr_top_stack = allocator.marker_bottom();
-    /// assert_eq!(allocator.stack().ptr(), ptr_top_stack);
+    /// impl Drop for Monster {
+    ///     fn drop(&mut self) {
+    ///         println!("Monster is dying !");
+    ///     }
+    /// }
+    ///
+    /// struct Dragon {
+    ///     level: u8,
+    /// }
+    ///
+    /// impl Default for Dragon {
+    ///     fn default() -> Self {
+    ///         Dragon {
+    ///             level: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Dragon {
+    ///     fn drop(&mut self) {
+    ///         println!("Dragon is dying !");
+    ///     }
+    /// }
+    ///
+    /// let allocator = StackAllocator::with_capacity(100); // 100 bytes.
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// let my_monster = allocator.alloc(|| {
+    ///     Monster::default()
+    /// });
+    ///
+    /// //After the monster allocation, get the index of the first unused memory address in the allocator.
+    /// let index_current_top = allocator.marker();
+    /// assert_ne!(index_current_top, 0);
+    ///
+    /// let my_dragon = allocator.alloc(|| {
+    ///     Dragon::default()
+    /// });
+    ///
+    /// assert_ne!(allocator.marker(), index_current_top);
+    ///
+    /// allocator.reset_to_marker(index_current_top);
+    ///
+    /// //The allocator has been partially reset, and all the content lying between the marker and
+    /// //the first unused memory address has been dropped.
+    /// //my_dragon has printed "Dragon is dying!".
+    ///
+    /// assert_eq!(allocator.marker(), index_current_top);
+    ///
     /// ```
-    pub fn reset_bottom(&self) {
-        self.current_offset_bottom.set(self.stack.ptr());
-    }
-
-    /// Move the pointer from the current top of the stack to the bottom of the stack (pointer allocating from the top).
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
-    ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    ///
-    /// //get a ptr to the top of the stack
-    /// let top_stack = allocator.marker_top();
-    ///
-    /// let an_i32 = allocator.alloc_top(25);
-    /// let ptr_top_stack = allocator.marker_top();
-    ///
-    /// assert_ne!(top_stack, ptr_top_stack);
-    ///
-    /// allocator.reset_top();
-    /// let ptr_top_stack = allocator.marker_top();
-    /// assert_eq!(top_stack, ptr_top_stack);
-    /// ```
-    pub fn reset_top(&self) {
-        //it is guaranteed that the offset will not cause overflow.
+    pub fn reset_to_marker(&self, start_chunk_position: &ChunkStartPosition, marker: usize) {
         unsafe {
-            let top_stack = self.stack().ptr().offset(self.stack().cap() as isize);
-            self.current_offset_top.set(top_stack);
+            self.storage.borrow().destroy_end_to_marker(start_chunk_position, marker);
+            self.storage.borrow().set_fill(start_chunk_position, marker);
         }
-    }
-
-    /// Allocate data in the allocator's memory, from the current top of the stack (pointer allocating from the bottom).
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the current length of the allocator + the size of the allocated object
-    /// exceed the allocator's capacity divided by 2.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
-    ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    ///
-    /// let my_i32 = allocator.alloc_bottom(26);
-    /// assert_eq!(my_i32, &mut 26);
-    /// ```
-    pub fn alloc_bottom<T>(&self, value: T) -> &mut T {
-        let layout = Layout::new::<T>(); //is always a power of two.
-        let offset = layout.align() + layout.size();
-
-        //println!("\nalignment: {}-byte alignment", layout.align());
-        //println!("size: {}", layout.size());
-        //println!("Total amount of memory to allocate: {} bytes", offset);
-
-        //Get the actual stack top. It will be the address returned.
-        let old_stack_top = self.current_offset_bottom.get();
-        //println!("address of the current stack top : {:?}", old_stack_top);
-
-        //Determine the total amount of memory to allocate
-        unsafe {
-            //Get the ptr to the unaligned location
-            let unaligned_ptr = old_stack_top.offset(offset as isize) as usize;
-            //println!("unaligned location: {:?}", unaligned_ptr as *mut u8);
-
-            //Now calculate the adjustment by masking off the lower bits of the address, to determine
-            //how "misaligned" it is.
-            let mask = layout.align() - 1;
-            //println!("mask (alignment - 1): {:#X} ", mask);
-            let misalignment = unaligned_ptr & mask;
-            //println!("misalignment (unaligned ptr addr |bitwise AND| mask): {:#X}", misalignment);
-            let adjustment = layout.align() - misalignment;
-            //println!("adjustment (current alignment - misalignment): {:#X}", adjustment);
-
-            let aligned_ptr = (unaligned_ptr + adjustment) as *mut u8;
-            //println!("aligned ptr (unaligned ptr addr + adjustment): {:?}", aligned_ptr);
-
-            assert!((self.stack.ptr().offset_to(aligned_ptr).unwrap() as usize) < self.stack.cap() / 2);
-
-            //Now update the current_offset
-            self.current_offset_bottom.set(aligned_ptr);
-
-            //println!("Real amount of memory allocated: {}", offset + adjustment);
-
-            //write the value in the memory location the old_stack_top is pointing.
-            core::ptr::write::<T>(old_stack_top as *mut T, value);
-
-
-            &mut *(old_stack_top as *mut T)
-        }
-    }
-
-
-    /// Allocate data in the allocator's memory, from the current top of the stack (pointer allocating from the top).
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the current length of the allocator + the size of the allocated object
-    /// exceed the allocator's capacity divided by 2.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
-    ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    ///
-    /// let my_i32 = allocator.alloc_top(26);
-    /// assert_eq!(my_i32, &mut 26);
-    /// ```
-    pub fn alloc_top<T>(&self, value: T) -> &mut T {
-        let layout = Layout::new::<T>(); //is always a power of two.
-        let offset = layout.align() + layout.size();
-
-        println!("\nalignment: {}-byte alignment", layout.align());
-        println!("size: {}", layout.size());
-        println!("Total amount of memory to allocate: {} bytes", offset);
-
-        //Get the actual stack top.
-        let old_stack_top = self.current_offset_top.get();
-        println!("address of the current stack top : {:?}", old_stack_top);
-
-        //Determine the total amount of memory to allocate
-        unsafe {
-            //Get the ptr to the unaligned location
-            let bottom_top_offset = self.stack().ptr().offset_to(old_stack_top).unwrap();
-
-
-            let unaligned_ptr = self.stack().ptr().offset(bottom_top_offset - offset as isize) as usize;
-            println!("unaligned location: {:?}", unaligned_ptr as *mut u8);
-
-            //Now calculate the adjustment by masking off the lower bits of the address, to determine
-            //how "misaligned" it is.
-            let mask = layout.align() - 1;
-            println!("mask (alignment - 1): {:#X} ", mask);
-            let misalignment = unaligned_ptr & mask;
-            println!("misalignment (unaligned ptr addr |bitwise AND| mask): {:#X}", misalignment);
-            let adjustment = layout.align() - misalignment;
-            println!("adjustment (current alignment - misalignment): {:#X}", adjustment);
-
-            let aligned_ptr = (unaligned_ptr - adjustment) as *mut u8;
-            println!("aligned ptr (unaligned ptr addr + adjustment): {:?}", aligned_ptr);
-
-            assert!((self.stack.ptr().offset_to(aligned_ptr).unwrap() as usize) > (self.stack.cap() / 2));
-
-            //Now update the current_offset
-            self.current_offset_top.set(aligned_ptr);
-
-            println!("Real amount of memory allocated: {}", offset + adjustment);
-
-            //write the value in the memory location the current_offset_top is pointing.
-            core::ptr::write::<T>(aligned_ptr as *mut T, value);
-
-
-            &mut *(aligned_ptr as *mut T)
-        }
-    }
-
-    ///Return a pointer to the current top of the stack (pointer allocating from the top).
-    pub fn marker_top(&self) -> *mut u8 {
-        self.current_offset_top.get()
-    }
-
-    ///Return a pointer to the current top of the stack (pointer allocating from the bottom).
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
-    ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    /// let ptr_bottom_stack = allocator.marker_bottom();
-    ///
-    /// // allocator.stack().ptr() return a pointer to the start of the allocation (the bottom of the stack).
-    /// // Nothing has been allocated on the stack, the top of the stack is at the bottom.
-    /// assert_eq!(allocator.stack().ptr(), ptr_bottom_stack);
-    /// ```
-    pub fn marker_bottom(&self) -> *mut u8 {
-        self.current_offset_bottom.get()
-    }
-
-    /// Move the pointer from the current top of the stack to a marker (pointer allocating from the top).
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
-    ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    /// let ptr_top = allocator.marker_top(); // bottom of the stack.
-    ///
-    /// let an_i32 = allocator.alloc_top(25);
-    /// // top of the stack after one allocation.
-    /// let ptr_one_alloc = allocator.marker_top();
-    /// assert_ne!(ptr_top, ptr_one_alloc);
-    ///
-    /// // The current top of the stack is now at the bottom.
-    /// allocator.reset_to_marker_top(ptr_top);
-    /// let new_ptr_top = allocator.marker_top();
-    /// assert_eq!(ptr_top, new_ptr_top);
-    /// ```
-    pub fn reset_to_marker_top(&self, marker: *mut u8) {
-        self.current_offset_top.set(marker);
-    }
-
-    /// Move the pointer from the current top of the stack to a marker (pointer allocating from the bottom).
-    /// # Example
-    /// ```
-    /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedAllocator;
-    ///
-    /// let allocator = DoubleEndedAllocator::with_capacity(100);
-    /// let ptr_bottom = allocator.marker_bottom(); // bottom of the stack.
-    /// assert_eq!(allocator.stack().ptr(), ptr_bottom);
-    ///
-    /// let an_i32 = allocator.alloc_bottom(25);
-    /// // top of the stack after one allocation.
-    /// let ptr_one_alloc = allocator.marker_bottom();
-    /// assert_ne!(allocator.stack().ptr(), ptr_one_alloc);
-    ///
-    /// // The current top of the stack is now at the bottom.
-    /// allocator.reset_to_marker_bottom(ptr_bottom);
-    /// let ptr_bottom = allocator.marker_bottom();
-    /// assert_eq!(allocator.stack().ptr(), ptr_bottom);
-    /// ```
-    pub fn reset_to_marker_bottom(&self, marker: *mut u8) {
-        self.current_offset_bottom.set(marker);
     }
 }
 
+impl Drop for DoubleEndedStackAllocator {
+    fn drop(&mut self) {
+        unsafe {
+            self.storage.borrow().destroy_all();
+        }
+    }
+}
 
 #[cfg(test)]
 mod stack_allocator_test {
     use super::*;
 
+    //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
+    struct Monster {
+        hp :u32,
+        level: u32,
+    }
+
+    impl Monster {
+        pub fn new(hp: u32, level: u32) -> Self {
+            Monster {
+                hp: 1,
+                level: 1,
+            }
+        }
+    }
+
+    impl Default for Monster {
+        fn default() -> Self {
+            Monster {
+                hp: 1,
+                level: 1,
+            }
+        }
+    }
+
+    impl Drop for Monster {
+        fn drop(&mut self) {
+            println!("I'm dying !");
+        }
+    }
+
     #[test]
     fn creation_with_right_capacity() {
-        //create a StackAllocator with the specified size.
-        let alloc = DoubleEndedAllocator::with_capacity(200);
-        let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset_bottom.get()).unwrap() as usize;
-        let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
-        assert_eq!(cap_used, 0);
-        assert_eq!(cap_remaining, 200);
+        unsafe {
+            //create a StackAllocator with the specified size.
+            let alloc = StackAllocator::with_capacity(200);
+            let start_chunk = alloc.storage.borrow().as_ptr();
+            let first_unused_mem_addr = start_chunk.offset(alloc.storage.borrow().fill() as isize);
+
+            assert_eq!(start_chunk, first_unused_mem_addr);
+        }
     }
 
     #[test]
     fn allocation_test() {
-        //Check the allocation with u8, u32 an u64, to verify the alignment behavior.
-
         //We allocate 200 bytes of memory.
-        let alloc = DoubleEndedAllocator::with_capacity(200);
+        let alloc = StackAllocator::with_capacity(200);
 
-        /*
-            U8 :
-            alignment : 1 byte alignment (can be aligned to any address in memory).
-            size : 1 byte.
+        let my_monster = alloc.alloc(|| {
+            Monster::new(1, 2)
+        });
 
-            We allocate 2 (alignment + size) bytes of memory.
-            Explanation : We'll adjust the address later. It allows for the worst-case address adjustment.
-
-            mask (used for adjustment) : alignment - 1 = 0x00000000 (0)
-
-            We calculate the misalignment by this operation : unaligned address & mask.
-            The bitwise AND of the mask and any unaligned address yield the misalignment of this address.
-            here, unaligned address & 0 = 0.
-            a value needing a 1 byte alignment is never misaligned.
-
-            we calculate the adjustment like this : alignment - misalignment.
-            here, alignment - misalignment = 1.
-            our 1 byte aligned data keeps the 1 byte alignment since it's not misaligned. (and it's never misaligned)
-
-            total amount of memory used: (alignment + size) + adjustment = 3.
-        */
-        let _test_1_byte = alloc.alloc_bottom::<u8>(2);
-        let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset_bottom.get()).unwrap() as usize;
-        let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
-        assert_eq!(cap_used, 3); //3
-        assert_eq!(cap_remaining, 197); //200 - 3
-
-        /*
-            U32 :
-            alignment : 4 byte alignment (can be aligned to addresses finishing by 0x0 0x4 0x8 0xC).
-            size : 4 bytes.
-
-            We allocate 8 (alignment + size) bytes of memory.
-            Explanation : We'll adjust the address later. It allows for the worst-case address adjustment.
-
-            mask (used for adjustment) : alignment - 1 = 0x00000003 (3)
-
-            We calculate the misalignment with this operation : unaligned address & mask.
-            The bitwise AND of the mask and any unaligned address yield the misalignment of this address.
-            here, misalignment = unaligned address & 3 = 3.
-
-            we calculate the adjustment like this : alignment - misalignment.
-            here, alignment - misalignment = 1.
-            our 4 byte aligned data must have an address adjusted by 1 byte, since it's misaligned by 3 bytes.
-
-            total amount of memory used: (alignment + size) + adjustment = 9.
-        */
-        let _test_4_bytes = alloc.alloc_bottom::<u32>(60000);
-        let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset_bottom.get()).unwrap() as usize;
-        let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
-        assert_eq!(cap_used, 12); //3 + 9
-        assert_eq!(cap_remaining, 188); //200 - 3 - 9
-        /*
-            U64 :
-            alignment : 8 byte alignment (can be aligned to addresses finishing by 0x0 0x8).
-            size : 8 byte.
-
-            We allocate 16 (alignment + size) bytes of memory.
-            Explanation : We'll adjust the address later. It allows for the worst-case address adjustment.
-
-            mask (used for adjustment) : alignment - 1 = 0x00000007 (7)
-
-            We calculate the misalignment by this operation : unaligned address & mask.
-            The bitwise AND of the mask and any unaligned address yield the misalignment of this address.
-            here, misalignment = unaligned address & 7 = 4.
-
-            we calculate the adjustment like this : alignment - misalignment.
-            here, alignment - misalignment = 4.
-            our 8 byte aligned data must have an address adjusted by 4 bytes, since it's misaligned by 4 bytes.
-
-            total amount of memory used: (alignment + size) + adjustment = 20.
-        */
-        let _test_8_bytes = alloc.alloc_bottom::<u64>(100000);
-        let cap_used = alloc.stack.ptr().offset_to(alloc.current_offset_bottom.get()).unwrap() as usize;
-        let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
-        assert_eq!(cap_used, 32); // 3 + 9 + 20
-        assert_eq!(cap_remaining, 168); //200 - 3 - 9 - 20
+        unsafe {
+            let start_alloc = alloc.storage.borrow().as_ptr();
+            let top_stack_index = alloc.storage.borrow().fill();
+            let top_stack = start_alloc.offset(top_stack_index as isize);
+            assert_ne!(start_alloc, top_stack);
+        }
     }
 
-    #[test]
-    fn test_alloc_from_top() {
-        //Check the allocation with u8, u32 an u64, to verify the alignment behavior.
-
-        //We allocate 200 bytes of memory.
-        let alloc = DoubleEndedAllocator::with_capacity(200);
-        let top_stack = alloc.marker_top();
-
-        let _test_1_byte = alloc.alloc_top::<u8>(2);
-
-        //We go backward, we would get -3.
-        let cap_used = (top_stack.offset_to(alloc.current_offset_top.get()).unwrap() * -1) as usize;
-        let cap_remaining = (alloc.stack.cap() - cap_used) as isize;
-        assert_eq!(cap_used, 3); //3
-        assert_eq!(cap_remaining, 197); //200 - 3
-    }
-
+    //Use 'cargo test -- --nocapture' to see the monsters' println!s
     #[test]
     fn test_reset() {
-        //Test if there's any problem with memory overwriting.
-        let alloc = DoubleEndedAllocator::with_capacity(200);
-        let test_1_byte = alloc.alloc_bottom::<u8>(2);
-        assert_eq!(test_1_byte, &mut 2);
-        alloc.reset_bottom();
-        let test_1_byte = alloc.alloc_bottom::<u8>(5);
-        assert_eq!(test_1_byte, &mut 5);
+        let alloc = StackAllocator::with_capacity(200);
+        let my_monster = alloc.alloc(|| {
+            Monster::new(1, 3)
+        });
+
+        let top_stack_index = alloc.marker();
+        let start_alloc = alloc.storage.borrow().as_ptr();
+        let mut current_top_stack_index = alloc.storage.borrow().fill();
+
+        unsafe {
+            let top_stack = start_alloc.offset(top_stack_index as isize);
+            let current_top_stack = start_alloc.offset(current_top_stack_index as isize);
+            assert_eq!(current_top_stack, top_stack);
+        }
+
+        let another_monster = alloc.alloc(|| {
+            Monster::default()
+        });
+
+        current_top_stack_index = alloc.storage.borrow().fill();
+
+        unsafe {
+            let top_stack = start_alloc.offset(top_stack_index as isize);
+            let current_top_stack = start_alloc.offset(current_top_stack_index as isize);
+            assert_ne!(current_top_stack, top_stack);
+        }
+
+        alloc.reset_to_marker(top_stack_index);
+
+        //another_monster prints "i'm dying". The drop function is called !
+
+        current_top_stack_index = alloc.storage.borrow().fill();
+        unsafe {
+            let top_stack = start_alloc.offset(top_stack_index as isize);
+            let current_top_stack = start_alloc.offset(current_top_stack_index as isize);
+            assert_eq!(current_top_stack, top_stack);
+        }
+
+        alloc.reset();
+
+        //my_monster prints "i'm dying". The drop function is called !
+
+        current_top_stack_index = alloc.storage.borrow().fill();
+        unsafe {
+            let top_stack = start_alloc.offset(top_stack_index as isize);
+            let current_top_stack = start_alloc.offset(current_top_stack_index as isize);
+            assert_ne!(current_top_stack, top_stack);
+            assert_eq!(current_top_stack, start_alloc);
+        }
     }
 }

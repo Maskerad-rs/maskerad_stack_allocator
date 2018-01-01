@@ -210,12 +210,12 @@ impl StackAllocator {
         //according to its memory alignment.
         let mut start = utils::round_up(after_type_description, align);
 
-        //Determine the index of the next memory address for a type description, according the the size of the object
+        //Determine the index of the next aligned memory address for a type description, according the the size of the object
         //and the memory alignment of a type description.
         let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
         //If the allocator becomes oom after this possible allocation, abort the program.
-        assert!(end <= non_copy_storage.capacity());
+        assert!(end < non_copy_storage.capacity());
 
         //Update the current top of the stack.
         //The first unused memory address is at index 'end',

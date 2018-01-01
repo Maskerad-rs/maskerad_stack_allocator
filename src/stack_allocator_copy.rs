@@ -159,7 +159,7 @@ impl StackAllocatorCopy {
         let mut end = start + n_bytes;
 
         //We don't grow the capacity, or create another chunk.
-        assert!(end <= copy_storage.capacity());
+        assert!(end < copy_storage.capacity());
 
         //Set the first unused memory address of the memory chunk to the index calculated earlier.
         copy_storage.set_fill(end);

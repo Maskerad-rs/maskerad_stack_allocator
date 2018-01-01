@@ -76,7 +76,7 @@ pub fn un_bitpack_type_description_ptr(p: usize) -> (*const TypeDescription, boo
     ((p & !1) as *const TypeDescription, p & 1 == 1)
 }
 
-/// Returns an aligned memory location, given a starting memory location and an alignment.
+/// Returns an index to an aligned memory location, given a starting memory location index and an alignment.
 ///
 /// # Explanation
 ///
