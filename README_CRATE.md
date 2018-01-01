@@ -1,6 +1,6 @@
-maskerad stack allocator
+maskerad memory allocators
 ========================
-**Stack-based allocators, for contiguous allocation and memory fragmentation prevention.**
+**custom allocators, for memory fragmentation prevention.**
 
 [![Build status](https://ci.appveyor.com/api/projects/status/5h6ndw7bd4b3yavl/branch/master?svg=true)](https://ci.appveyor.com/project/Malkaviel/maskerad-stack-allocator/branch/master)
 [![Build Status](https://travis-ci.org/Maskerad-rs/maskerad_stack_allocator.svg?branch=master)](https://travis-ci.org/Maskerad-rs/maskerad_stack_allocator)

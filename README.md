@@ -1,6 +1,6 @@
-maskerad stack allocator
+maskerad memory allocators
 ========================
-**Stack-based allocators, for contiguous allocation and memory fragmentation prevention.**
+**custom allocators, for memory fragmentation prevention.**
 
 [![codecov](https://codecov.io/gh/Maskerad-rs/maskerad_stack_allocator/branch/master/graph/badge.svg)](https://codecov.io/gh/Maskerad-rs/maskerad_stack_allocator)
 [![Build status](https://ci.appveyor.com/api/projects/status/5h6ndw7bd4b3yavl/branch/master?svg=true)](https://ci.appveyor.com/project/Malkaviel/maskerad-stack-allocator/branch/master)
@@ -11,29 +11,27 @@ maskerad stack allocator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-This library is **nightly-only** and provide: 
+This Rust library is **nightly-only** and provides: 
 - a **stack-based** allocator
 
 This allocator is a vector-like data structure, which asks **n** number of bytes from the heap
 when instantiated.
 
-When we want to allocate memory
-for an object with this allocator, this structure gives a **raw pointer** to the 
-**current top of its stack**, calculate the space needed by the object and its memory-alignment,
-and move the current top of its stack to this offset.
-
 - a **double-buffered** allocator
 
-It is a structure holding two stack-based allocator. One is active, the other is inactive.
+It is a structure holding two stack-based allocators. One is active, the other is inactive.
 When we allocate/reset with this allocator, the active stack-based allocator allocates/reset memory.
 We can swap the allocators, the inactive one becomes active.
 
 - a **double-ended** allocator
 
-It works like a stack-based allocator, but allocations can occur on both sides.
+It works like a stack-based allocator, but allocations can occur on both sides. *Technically* it doesn't work
+like that, but that's the idea.
 
+All those type of allocators are available for structures implementing the **Copy** trait **OR** the **Drop** trait.
 
-This library was made to **prevent memory fragmentation** when allocating memory on the heap.
+This library was made to **prevent memory fragmentation**. The allocators preallocate memory from the heap,
+and we use those allocators to create objects.
 
 Usage
 -----
@@ -47,7 +45,10 @@ Refer to the [documentation](https://docs.rs/maskerad_stack_allocator) for some 
 ### Use case: game loops
 
 
-Those type of allocators are **dropless**: memory is never freed, it means we may **override currently used memory** !
+With those types of allocators, memory is freed only when the allocator is dropped, we can just *reset*
+the allocators.
+
+it means we may **override currently used memory** !
 
 Not in a game loop :
 - We allocate at the beginning of the loop.
@@ -94,7 +95,7 @@ Custom memory allocators can help with both problems.
 
 We can distinguish 3 types of memory allocation :
 - **Persistent** memory allocation: data is allocated when the program is started, and freed when
-the program is shut down. The [arena crate](https://doc.rust-lang.org/1.1.0/arena) is perfect for that.
+the program is shut down. The [arena crate](https://doc.rust-lang.org/1.1.0/arena) or a stack-based allocator can help here.
 
 - **Dynamic** memory allocation: data is allocated and freed during the lifetime of the program, but
 we can't predict *when* this data is allocated and freed. An [Object Pool](https://github.com/Maskerad-rs/Maskerad_memory_allocator)
@@ -115,9 +116,6 @@ can be useful with this type of memory allocation.
 [Game Programming Patterns, Chapter 19, about Object Pools](http://gameprogrammingpatterns.com/object-pool.html)
 
 [Wikipedia article about Object Pools](https://en.wikipedia.org/wiki/Memory_pool)
-
-## Known issues
-Allocations with the stack allocator is slower than heap allocation.
 
 ## License
 
