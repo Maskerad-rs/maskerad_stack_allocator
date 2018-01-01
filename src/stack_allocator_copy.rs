@@ -60,7 +60,7 @@ impl StackAllocatorCopy {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100);
     /// assert_eq!(allocator.storage().borrow().capacity(), 100);
@@ -83,7 +83,7 @@ impl StackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100);
     ///
@@ -150,7 +150,7 @@ impl StackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100); //100 bytes
     ///
@@ -179,7 +179,7 @@ impl StackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::StackAllocatorCopy;
     ///
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100); // 100 bytes.
@@ -210,7 +210,7 @@ impl StackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100); // 100 bytes.
     ///

@@ -14,7 +14,7 @@ use StackAllocatorCopy;
 ///
 /// # Example
 /// ```
-/// use maskerad_stack_allocator::DoubleBufferedAllocatorCopy;
+/// use maskerad_memory_allocators::DoubleBufferedAllocatorCopy;
 ///
 ///
 /// let mut allocator = DoubleBufferedAllocatorCopy::with_capacity(100); //100 bytes.
@@ -47,7 +47,7 @@ impl DoubleBufferedAllocatorCopy {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleBufferedAllocatorCopy;
+    /// use maskerad_memory_allocators::DoubleBufferedAllocatorCopy;
     ///
     /// let allocator = DoubleBufferedAllocatorCopy::with_capacity(100);
     ///

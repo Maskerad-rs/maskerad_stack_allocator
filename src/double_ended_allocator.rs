@@ -74,9 +74,9 @@ use memory_chunk::{ChunkType, MemoryChunk};
 /// # Example
 ///
 /// ```
-/// use maskerad_stack_allocator::DoubleEndedStackAllocator;
-/// use maskerad_stack_allocator::ChunkType;
-/// use maskerad_stack_allocator::StackAllocator;
+/// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+/// use maskerad_memory_allocators::ChunkType;
+/// use maskerad_memory_allocators::StackAllocator;
 ///
 /// struct LevelConfig {
 ///     data: u32,
@@ -173,7 +173,7 @@ impl DoubleEndedStackAllocator {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
     ///
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100);
     /// assert_eq!(allocator.temp_storage().borrow().capacity(), 50);
@@ -203,8 +203,8 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocator;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     /// struct Monster {
     ///     hp: u32,
@@ -390,8 +390,8 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocator;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100); //50 bytes for each memory chunk.
     ///
@@ -427,8 +427,8 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocator;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     /// struct Monster {
     ///     _hp :u32,
@@ -514,8 +514,8 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocator;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     /// struct Monster {
     ///     _hp :u32,

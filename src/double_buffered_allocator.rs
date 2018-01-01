@@ -14,7 +14,7 @@ use StackAllocator;
 ///
 /// # Example
 /// ```
-/// use maskerad_stack_allocator::DoubleBufferedAllocator;
+/// use maskerad_memory_allocators::DoubleBufferedAllocator;
 ///
 /// struct Monster {
 ///     hp :u32,
@@ -67,7 +67,7 @@ impl DoubleBufferedAllocator {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleBufferedAllocator;
+    /// use maskerad_memory_allocators::DoubleBufferedAllocator;
     ///
     /// let allocator = DoubleBufferedAllocator::with_capacity(100);
     ///

@@ -74,7 +74,7 @@ impl DoubleEndedStackAllocatorCopy {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocatorCopy;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
     ///
     /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100);
     /// assert_eq!(allocator.temp_storage().borrow().capacity(), 50);
@@ -104,8 +104,8 @@ impl DoubleEndedStackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocatorCopy;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     ///
     /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100);
@@ -224,8 +224,8 @@ impl DoubleEndedStackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocatorCopy;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100); //50 bytes for each memory chunk.
     ///
@@ -261,8 +261,8 @@ impl DoubleEndedStackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocatorCopy;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     ///
     /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100); // 50 bytes for each memory chunk.
@@ -305,8 +305,8 @@ impl DoubleEndedStackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::DoubleEndedStackAllocatorCopy;
-    /// use maskerad_stack_allocator::ChunkType;
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
+    /// use maskerad_memory_allocators::ChunkType;
     ///
     ///
     /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100); // 100 bytes.

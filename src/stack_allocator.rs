@@ -64,7 +64,7 @@ use memory_chunk::MemoryChunk;
 /// # Example
 ///
 /// ```
-/// use maskerad_stack_allocator::StackAllocator;
+/// use maskerad_memory_allocators::StackAllocator;
 ///
 /// struct Monster {
 ///     hp :u32,
@@ -118,7 +118,7 @@ impl StackAllocator {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_stack_allocator::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// let allocator = StackAllocator::with_capacity(100);
     /// assert_eq!(allocator.storage().borrow().capacity(), 100);
@@ -141,7 +141,7 @@ impl StackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// let allocator = StackAllocator::with_capacity(100);
     ///
@@ -249,7 +249,7 @@ impl StackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// let allocator = StackAllocator::with_capacity(100); //100 bytes
     ///
@@ -278,7 +278,7 @@ impl StackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// struct Monster {
     ///     hp :u32,
@@ -350,7 +350,7 @@ impl StackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_stack_allocator::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// struct Monster {
     ///     hp :u32,
