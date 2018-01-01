@@ -1,8 +1,8 @@
 [package]
-name = "maskerad_stack_allocator"
-version = "1.1.2"
+name = "maskerad_memory_allocators"
+version = "2.0.0"
 authors = ["Maskerad developers <maskerad-rs.organization@protonmail.com>"]
-description = "Stack-based allocators, for contiguous allocation and memory fragmentation prevention."
+description = "custom allocators, for memory fragmentation prevention."
 license = "MIT/Apache-2.0"
 repository = "https://github.com/Maskerad-rs/maskerad_stack_allocator"
 keywords = ["memory-allocator", "stack-allocator"]
@@ -21,7 +21,6 @@ maintenance = { status = "actively-developed" }
 
 [dev-dependencies]
 bencher = "0.1.4"
-time = "0.1.38"
 
 [[bench]]
 name = "speed_comparison"
