@@ -43,7 +43,7 @@ pub struct DoubleBufferedAllocatorCopy {
 
 impl DoubleBufferedAllocatorCopy {
 
-    /// Create a DoubleBufferedAllocator with the given capacity (in bytes).
+    /// Create a DoubleBufferedAllocatorCopy with the given capacity (in bytes).
     /// # Example
     /// ```
     /// #![feature(alloc)]
@@ -142,7 +142,7 @@ mod double_buffer_allocator_test {
             assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
         }
 
-        let my_beef = alloc.alloc(|| {
+        let _my_beef = alloc.alloc(|| {
             0xb33f as i32
         });
 
@@ -190,7 +190,7 @@ mod double_buffer_allocator_test {
 
 
         alloc.swap_buffers();
-        let my_i32 = alloc.alloc(|| {
+        let _my_i32 = alloc.alloc(|| {
             25
         });
         let index_first_buffer_top_stack = alloc.buffers[0].marker();

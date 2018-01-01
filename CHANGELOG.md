@@ -48,3 +48,15 @@ provided a DoubleEndedAllocator.
 #### version 1.1.1 -> version 1.1.2
 
 Small formatting problem in the documentation...
+
+### January 1
+#### version 1.1.2 -> version 2.0.0
+
+Rewrote everything.
+The earlier design was pretty bad, and just didn't work. The stack allocators have been
+entirely refactored, following the work done on the any-arena crate. The AnyArena structure
+is literally a container of stack allocators.
+
+I can't make a detailed changelog, everything has been refactored.
+
+Coming later : memory pools if all goes well.

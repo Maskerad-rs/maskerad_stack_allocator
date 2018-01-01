@@ -14,22 +14,23 @@ use utils;
 
 /// A stack-based allocator for data implementing the Copy trait.
 ///
-/// It manages a copy MemoryChunk to:
+/// It manages a **MemoryChunk** to:
 ///
 /// - Allocate bytes in a stack-like fashion.
 ///
 /// - Store different types of objects in the same storage.
 ///
-///
+/// # Differences with StackAllocator
 /// This stack allocator slightly differs from the non-copy stack allocator. The non-copy
 /// stack allocator must extract some metadata (the vtable) about the object it will allocate,
 /// to be able to call the drop function of the object when needed. However, a type implementing
 /// the Copy trait doesn't, and can't, implement Drop. There is no need to store extra informations
 /// about those types, they don't have destructors.
 ///
-///
+/// # Instantiation
 /// When instantiated, the memory chunk pre-allocate the given number of bytes.
 ///
+/// # Allocation
 /// When an object is allocated in memory, the StackAllocator:
 ///
 /// - Asks a pointer to a memory address to its memory chunk,
@@ -40,10 +41,9 @@ use utils;
 ///
 /// - And return a mutable reference to the object which has been placed in the memory chunk.
 ///
-///
-///
 /// This offset is calculated by the size of the object, its memory-alignment and an offset to align the object in memory.
 ///
+/// # Roll-back
 /// This structure allows you to get a **marker**, the index to the first unused memory address of the memory chunk. A stack allocator can be *reset* to a marker,
 /// or reset entirely.
 ///
@@ -51,31 +51,6 @@ use utils;
 ///
 /// When the allocator is reset completely, the memory chunk will set the first unused memory address to the bottom of its stack.
 ///
-/// # Example
-///
-/// ```
-/// use maskerad_stack_allocator::StackAllocatorCopy;
-///
-///
-/// let single_frame_allocator = StackAllocatorCopy::with_capacity(100); //100 bytes
-/// let mut closed = false;
-///
-/// while !closed {
-///     // The allocator is cleared every frame.
-///     // (The pointer to the current top of the stack goes back to the bottom).
-///     single_frame_allocator.reset();
-///
-///     //...
-///
-///     //allocate from the single frame allocator.
-///     //Be sure to use the data during this frame only!
-///     let an_u64 = single_frame_allocator.alloc(|| {
-///         4587 as u64
-///     });
-///
-///     assert_eq!(an_u64, &mut 4587);
-///     closed = true;
-/// }
 pub struct StackAllocatorCopy {
     storage: RefCell<MemoryChunk>,
 }
@@ -147,16 +122,16 @@ impl StackAllocatorCopy {
     #[inline]
     fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> *const u8 {
         //borrow mutably the memory chunk used by the allocator.
-        let mut copy_storage = self.storage.borrow_mut();
+        let copy_storage = self.storage.borrow_mut();
 
         //Get the index of the first unused memory address in the memory chunk.
         let fill = copy_storage.fill();
 
         //Get the index of the aligned memory address, which will be returned.
-        let mut start = utils::round_up(fill, align);
+        let start = utils::round_up(fill, align);
 
         //Get the index of the future first unused memory address, according to the size of the object.
-        let mut end = start + n_bytes;
+        let end = start + n_bytes;
 
         //We don't grow the capacity, or create another chunk.
         assert!(end < copy_storage.capacity());
@@ -333,7 +308,7 @@ mod stack_allocator_copy_test {
             assert_eq!(start_chunk, current_top);
         }
 
-        let my_u64 = alloc.alloc(|| {
+        let _my_u64 = alloc.alloc(|| {
             7894 as u64
         });
 
@@ -343,7 +318,7 @@ mod stack_allocator_copy_test {
             assert_ne!(start_chunk, current_top);
         }
 
-        let bob = alloc.alloc(|| {
+        let _bob = alloc.alloc(|| {
             0xb0b as u64
         });
 

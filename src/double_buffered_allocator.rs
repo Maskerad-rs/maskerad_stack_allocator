@@ -49,7 +49,7 @@ use StackAllocator;
 ///     //allocate with the current buffer, leaving the data in the inactive buffer intact.
 ///     //You can use this data during this frame, or the next frame.
 ///     //After the next frame, the monster will be dropped and print "i'm dying!".
-///     let my_monster: &mut Monster = allocator.alloc(|| {
+///     let my_monster = allocator.alloc(|| {
 ///         Monster::default()
 ///     });
 ///
@@ -139,24 +139,13 @@ mod double_buffer_allocator_test {
 
     //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
     struct Monster {
-        hp :u32,
-        level: u32,
-    }
-
-    impl Monster {
-        pub fn new(hp: u32, level: u32) -> Self {
-            Monster {
-                hp: 1,
-                level: 1,
-            }
-        }
+        _hp :u32,
     }
 
     impl Default for Monster {
         fn default() -> Self {
             Monster {
-                hp: 1,
-                level: 1,
+                _hp: 1,
             }
         }
     }
@@ -192,7 +181,7 @@ mod double_buffer_allocator_test {
             assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
         }
 
-        let my_monster = alloc.alloc(|| {
+        let _my_monster = alloc.alloc(|| {
             Monster::default()
         });
 
@@ -240,7 +229,7 @@ mod double_buffer_allocator_test {
 
 
         alloc.swap_buffers();
-        let my_monster = alloc.alloc(|| {
+        let _my_monster = alloc.alloc(|| {
             Monster::default()
         });
         let index_first_buffer_top_stack = alloc.buffers[0].marker();

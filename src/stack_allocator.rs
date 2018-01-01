@@ -17,10 +17,8 @@
 */
 
 
-use alloc::allocator::Layout;
 use core::ptr;
 use std::cell::RefCell;
-use alloc::heap;
 use std::mem;
 
 use utils;
@@ -29,7 +27,7 @@ use memory_chunk::MemoryChunk;
 
 /// A stack-based allocator for data implementing the Drop trait.
 ///
-/// It manages a non-copy MemoryChunk to:
+/// It manages a **MemoryChunk** to:
 ///
 /// - Allocate bytes in a stack-like fashion.
 ///
@@ -37,10 +35,11 @@ use memory_chunk::MemoryChunk;
 ///
 /// - Drop the content of the MemoryChunk when needed.
 ///
-///
+/// # Instantiation
 /// When instantiated, the memory chunk pre-allocate the given number of bytes.
 ///
-/// When an object is allocated in memory, the StackAllocator:
+/// # Allocation
+/// When an object is allocated in memory, the allocator:
 ///
 /// - Asks a pointer to a memory address to its memory chunk,
 ///
@@ -50,9 +49,9 @@ use memory_chunk::MemoryChunk;
 ///
 /// - And return a mutable reference to the object which has been placed in the memory chunk.
 ///
-///
-///
 /// This offset is calculated by the size of the object, the size of a TypeDescription structure, its memory-alignment and an offset to align the object in memory.
+///
+/// # Roll-back
 ///
 /// This structure allows you to get a **marker**, the index to the first unused memory address of the memory chunk. A stack allocator can be *reset* to a marker,
 /// or reset entirely.
@@ -81,12 +80,18 @@ use memory_chunk::MemoryChunk;
 ///     }
 /// }
 ///
+/// impl Drop for Monster {
+///     fn drop(&mut self) {
+///         println!("I'm dying !");
+///     }
+/// }
+///
 /// let single_frame_allocator = StackAllocator::with_capacity(100); //100 bytes
 /// let mut closed = false;
 ///
 /// while !closed {
 ///     // The allocator is cleared every frame.
-///     // (The pointer to the current top of the stack goes back to the bottom).
+///     // (Everything is dropped, and allocation occurs from the bottom of the stack).
 ///     single_frame_allocator.reset();
 ///
 ///     //...
@@ -193,14 +198,14 @@ impl StackAllocator {
     #[inline]
     fn alloc_non_copy_inner(&self, n_bytes: usize, align: usize) -> (*const u8, *const u8) {
         //mutably borrow the memory chunk.
-        let mut non_copy_storage = self.storage.borrow_mut();
+        let non_copy_storage = self.storage.borrow_mut();
 
         //Get the index of the first unused byte in the memory chunk.
         let fill = non_copy_storage.fill();
 
         //Get the index of where We'll write the type description data
         //(the first unused byte in the memory chunk).
-        let mut type_description_start = fill;
+        let type_description_start = fill;
 
         // Get the index of where the object should reside (unaligned location actually).
         let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
@@ -208,11 +213,11 @@ impl StackAllocator {
         //With the index to the unaligned memory address, determine the index to
         //the aligned memory address where the object will reside,
         //according to its memory alignment.
-        let mut start = utils::round_up(after_type_description, align);
+        let start = utils::round_up(after_type_description, align);
 
         //Determine the index of the next aligned memory address for a type description, according the the size of the object
         //and the memory alignment of a type description.
-        let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
+        let end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
         //If the allocator becomes oom after this possible allocation, abort the program.
         assert!(end < non_copy_storage.capacity());
@@ -433,15 +438,13 @@ mod stack_allocator_test {
 
     //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
     struct Monster {
-        hp :u32,
-        level: u32,
+        _hp :u32,
     }
 
     impl Monster {
-        pub fn new(hp: u32, level: u32) -> Self {
+        pub fn new(hp: u32) -> Self {
             Monster {
-                hp: 1,
-                level: 1,
+                _hp: hp,
             }
         }
     }
@@ -449,8 +452,7 @@ mod stack_allocator_test {
     impl Default for Monster {
         fn default() -> Self {
             Monster {
-                hp: 1,
-                level: 1,
+                _hp: 1,
             }
         }
     }
@@ -478,8 +480,8 @@ mod stack_allocator_test {
         //We allocate 200 bytes of memory.
         let alloc = StackAllocator::with_capacity(200);
 
-        let my_monster = alloc.alloc(|| {
-            Monster::new(1, 2)
+        let _my_monster = alloc.alloc(|| {
+            Monster::new(1)
         });
 
         unsafe {
@@ -494,8 +496,8 @@ mod stack_allocator_test {
     #[test]
     fn test_reset() {
         let alloc = StackAllocator::with_capacity(200);
-        let my_monster = alloc.alloc(|| {
-            Monster::new(1, 3)
+        let _my_monster = alloc.alloc(|| {
+            Monster::new(1)
         });
 
         let top_stack_index = alloc.marker();
@@ -508,7 +510,7 @@ mod stack_allocator_test {
             assert_eq!(current_top_stack, top_stack);
         }
 
-        let another_monster = alloc.alloc(|| {
+        let _another_monster = alloc.alloc(|| {
             Monster::default()
         });
 

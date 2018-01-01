@@ -11,6 +11,14 @@ use core::mem;
 
 use utils;
 
+/// The type of the memory chunk.
+///
+/// Only used by the double-ended allocators, to choose which memory chunk to operate on.
+pub enum ChunkType {
+    TempData,
+    ResidentData,
+}
+
 /// The MemoryChunk is just a chunk of memory.
 /// It uses a [RawVec](https://doc.rust-lang.org/alloc/raw_vec/struct.RawVec.html) to allocate bytes
 /// in a vector-like fashion.
@@ -20,7 +28,8 @@ use utils;
 /// - The chunk knows the location of the first unused byte in its memory storage, and update it when allocation occurs or
 /// when objects in the memory chunk are dropped.
 ///
-/// - The chunk extracts some info about the type (its virtual table) and place it next to the object. The chunk is able to call the drop method of the object
+/// - The chunk extracts, for the types implementing the Drop trait,
+/// some info about the type (its virtual table) and place it next to the object. The chunk is able to call the drop method of the object
 /// with the virtual table.
 ///
 ///
