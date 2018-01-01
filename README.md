@@ -11,6 +11,9 @@ maskerad memory allocators
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+Presentation
+------------
+
 This Rust library is **nightly-only** and provides: 
 - a **stack-based** allocator
 
@@ -37,10 +40,10 @@ Usage
 -----
 ### Installation
 
-This library is available on [crates.io](https://crates.io/crates/maskerad_stack_allocator)
+This library is available on [crates.io](https://crates.io/crates/maskerad_memory_allocators)
 
 ### Examples
-Refer to the [documentation](https://docs.rs/maskerad_stack_allocator) for some examples.
+Refer to the [documentation](https://docs.rs/maskerad_memory_allocators) for some examples.
 
 ### Use case: game loops
 
