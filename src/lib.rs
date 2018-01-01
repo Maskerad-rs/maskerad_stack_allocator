@@ -1,4 +1,4 @@
-// Copyright 2017 Maskerad Developers
+// Copyright 2017-2018 Maskerad Developers
 //
 // Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
@@ -34,8 +34,12 @@ mod double_buffered_allocator;
 mod double_ended_allocator;
 mod memory_chunk;
 mod stack_allocator_copy;
-mod utils;
+pub mod utils;
+mod double_buffered_allocator_copy;
 
 pub use stack_allocator::StackAllocator;
+pub use stack_allocator_copy::StackAllocatorCopy;
+pub use memory_chunk::MemoryChunk;
 pub use double_buffered_allocator::DoubleBufferedAllocator;
+pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
 pub use double_ended_allocator::DoubleEndedAllocator;

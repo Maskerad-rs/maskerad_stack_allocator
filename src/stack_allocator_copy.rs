@@ -1,4 +1,4 @@
-// Copyright 2017 Maskerad Developers
+// Copyright 2017-2018 Maskerad Developers
 //
 // Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
@@ -12,7 +12,7 @@ use std::cell::RefCell;
 
 use utils;
 
-/// A stack-based allocator.
+/// A stack-based allocator for data implementing the Copy trait.
 ///
 /// It manages a copy MemoryChunk to:
 ///
@@ -51,17 +51,72 @@ use utils;
 ///
 /// When the allocator is reset completely, the memory chunk will set the first unused memory address to the bottom of its stack.
 ///
+/// # Example
+///
+/// ```
+/// use maskerad_stack_allocator::StackAllocatorCopy;
+///
+///
+/// let single_frame_allocator = StackAllocatorCopy::with_capacity(100); //100 bytes
+/// let mut closed = false;
+///
+/// while !closed {
+///     // The allocator is cleared every frame.
+///     // (The pointer to the current top of the stack goes back to the bottom).
+///     single_frame_allocator.reset();
+///
+///     //...
+///
+///     //allocate from the single frame allocator.
+///     //Be sure to use the data during this frame only!
+///     let an_u64 = single_frame_allocator.alloc(|| {
+///         4587 as u64
+///     });
+///
+///     assert_eq!(an_u64, &mut 4587);
+///     closed = true;
+/// }
 pub struct StackAllocatorCopy {
     storage: RefCell<MemoryChunk>,
 }
 
 impl StackAllocatorCopy {
+    /// Creates a StackAllocatorCopy with the given capacity, in bytes.
+    /// # Example
+    /// ```
+    /// #![feature(alloc)]
+    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    ///
+    /// let allocator = StackAllocatorCopy::with_capacity(100);
+    /// assert_eq!(allocator.storage().borrow().capacity(), 100);
+    /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         StackAllocatorCopy {
             storage: RefCell::new(MemoryChunk::new(capacity)),
         }
     }
 
+    /// Returns an immutable reference to the memory chunk used by the allocator.
+    pub fn storage(&self) -> &RefCell<MemoryChunk> {
+        &self.storage
+    }
+
+    /// Allocates data in the allocator's memory.
+    ///
+    /// # Panics
+    /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    ///
+    /// let allocator = StackAllocatorCopy::with_capacity(100);
+    ///
+    /// let my_i32 = allocator.alloc(|| {
+    ///     26 as i32
+    /// });
+    /// assert_eq!(my_i32, &mut 26);
+    /// ```
     #[inline]
     pub fn alloc<T: Copy, F>(&self, op: F) -> &mut T
         where F: FnOnce() -> T
@@ -75,39 +130,140 @@ impl StackAllocatorCopy {
         where F: FnOnce() -> T
     {
         unsafe {
+            //Get an aligned raw pointer to place the object in it.
             let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>());
+
+            //cast this raw pointer to the type of the object.
             let ptr = ptr as *mut T;
+
+            //Write the data in the memory location.
             ptr::write(&mut (*ptr), op());
+
+            //return a mutable reference to this pointer.
             &mut *ptr
         }
     }
 
     #[inline]
     fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> *const u8 {
+        //borrow mutably the memory chunk used by the allocator.
         let mut copy_storage = self.storage.borrow_mut();
+
+        //Get the index of the first unused memory address in the memory chunk.
         let fill = copy_storage.fill();
 
+        //Get the index of the aligned memory address, which will be returned.
         let mut start = utils::round_up(fill, align);
+
+        //Get the index of the future first unused memory address, according to the size of the object.
         let mut end = start + n_bytes;
 
         //We don't grow the capacity, or create another chunk.
         assert!(end <= copy_storage.capacity());
 
+        //Set the first unused memory address of the memory chunk to the index calculated earlier.
         copy_storage.set_fill(end);
 
         unsafe {
+            //Return the raw pointer to the aligned memory location, which will be used to place
+            //the object in the allocator.
             copy_storage.as_ptr().offset(start as isize)
         }
     }
 
+    /// Returns the index of the first unused memory address.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    ///
+    /// let allocator = StackAllocatorCopy::with_capacity(100); //100 bytes
+    ///
+    /// //Get the raw pointer to the bottom of the allocator's memory chunk.
+    /// let start_allocator = allocator.storage().borrow().as_ptr();
+    ///
+    /// //Get the index of the first unused memory address.
+    /// let index_current_top = allocator.marker();
+    ///
+    /// //Calling offset() on a raw pointer is an unsafe operation.
+    /// unsafe {
+    ///     //Get the raw pointer, with the index.
+    ///     let current_top = start_allocator.offset(index_current_top as isize);
+    ///
+    ///     //Nothing has been allocated in the allocator,
+    ///     //the top of the stack is the bottom of the allocator's memory chunk.
+    ///     assert_eq!(current_top, start_allocator);
+    /// }
+    ///
+    /// ```
     pub fn marker(&self) -> usize {
         self.storage.borrow_mut().fill()
     }
 
+    /// Reset the allocator completely.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    ///
+    ///
+    /// let allocator = StackAllocatorCopy::with_capacity(100); // 100 bytes.
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// let an_u8 = allocator.alloc(|| {
+    ///     15 as u8
+    /// });
+    /// assert_ne!(allocator.marker(), 0);
+    ///
+    /// let bob = allocator.alloc(|| {
+    ///     0xb0b as u64
+    /// });
+    ///
+    /// allocator.reset();
+    ///
+    /// //The allocator has been totally reset, allocation will now start at index 0.
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// ```
     pub fn reset(&self) {
             self.storage.borrow().set_fill(0);
     }
 
+    /// Reset partially the allocator, allocations will occur from the index given by the marker.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocatorCopy;
+    ///
+    /// let allocator = StackAllocatorCopy::with_capacity(100); // 100 bytes.
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// let an_i32 = allocator.alloc(|| {
+    ///     45 as i32
+    /// });
+    ///
+    /// //After the i32 allocation, get the index of the first unused memory address in the allocator.
+    /// let index_current_top = allocator.marker();
+    /// assert_ne!(index_current_top, 0);
+    ///
+    /// let an_i64 = allocator.alloc(|| {
+    ///     450 as i64
+    /// });
+    ///
+    /// assert_ne!(allocator.marker(), index_current_top);
+    ///
+    /// allocator.reset_to_marker(index_current_top);
+    ///
+    /// //The allocator has been partially reset, new allocations will occur from the index given
+    /// //by the marker.
+    ///
+    /// assert_eq!(allocator.marker(), index_current_top);
+    ///
+    /// ```
     pub fn reset_to_marker(&self, marker: usize) {
             self.storage.borrow().set_fill(marker);
     }

@@ -1,4 +1,4 @@
-// Copyright 2017 Maskerad Developers
+// Copyright 2017-2018 Maskerad Developers
 //
 // Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
@@ -27,7 +27,7 @@ use utils;
 use memory_chunk::MemoryChunk;
 
 
-/// A stack-based allocator.
+/// A stack-based allocator for data implementing the Drop trait.
 ///
 /// It manages a non-copy MemoryChunk to:
 ///
@@ -93,7 +93,9 @@ use memory_chunk::MemoryChunk;
 ///
 ///     //allocate from the single frame allocator.
 ///     //Be sure to use the data during this frame only!
-///     let my_monster = single_frame_allocator.alloc(Monster::default());
+///     let my_monster = single_frame_allocator.alloc(|| {
+///         Monster::default()
+///     });
 ///
 ///     assert_eq!(my_monster.level, 1);
 ///     closed = true;
@@ -114,7 +116,7 @@ impl StackAllocator {
     /// use maskerad_stack_allocator::StackAllocator;
     ///
     /// let allocator = StackAllocator::with_capacity(100);
-    /// assert_eq!(allocator.stack().cap(), 100);
+    /// assert_eq!(allocator.storage().borrow().capacity(), 100);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         StackAllocator {
@@ -138,7 +140,9 @@ impl StackAllocator {
     ///
     /// let allocator = StackAllocator::with_capacity(100);
     ///
-    /// let my_i32 = allocator.alloc(26);
+    /// let my_i32 = allocator.alloc(|| {
+    ///     26 as i32
+    /// });
     /// assert_eq!(my_i32, &mut 26);
     /// ```
     #[inline]
@@ -237,11 +241,98 @@ impl StackAllocator {
     }
 
     /// Returns the index of the first unused memory address.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100); //100 bytes
+    ///
+    /// //Get the raw pointer to the bottom of the allocator's memory chunk.
+    /// let start_allocator = allocator.storage().borrow().as_ptr();
+    ///
+    /// //Get the index of the first unused memory address.
+    /// let index_current_top = allocator.marker();
+    ///
+    /// //Calling offset() on a raw pointer is an unsafe operation.
+    /// unsafe {
+    ///     //Get the raw pointer, with the index.
+    ///     let current_top = start_allocator.offset(index_current_top as isize);
+    ///
+    ///     //Nothing has been allocated in the allocator,
+    ///     //the top of the stack is the bottom of the allocator's memory chunk.
+    ///     assert_eq!(current_top, start_allocator);
+    /// }
+    ///
+    /// ```
     pub fn marker(&self) -> usize {
         self.storage.borrow_mut().fill()
     }
 
     /// Reset the allocator, dropping all the content residing inside it.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// struct Monster {
+    ///     hp :u32,
+    /// }
+    ///
+    /// impl Default for Monster {
+    ///     fn default() -> Self {
+    ///         Monster {
+    ///         hp: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Monster {
+    ///     fn drop(&mut self) {
+    ///         println!("Monster is dying !");
+    ///     }
+    /// }
+    ///
+    /// struct Dragon {
+    ///     level: u8,
+    /// }
+    ///
+    /// impl Default for Dragon {
+    ///     fn default() -> Self {
+    ///         Dragon {
+    ///             level: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Dragon {
+    ///     fn drop(&mut self) {
+    ///         println!("Dragon is dying !");
+    ///     }
+    /// }
+    ///
+    /// let allocator = StackAllocator::with_capacity(100); // 100 bytes.
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// let my_monster = allocator.alloc(|| {
+    ///     Monster::default()
+    /// });
+    /// assert_ne!(allocator.marker(), 0);
+    ///
+    /// let my_dragon = allocator.alloc(|| {
+    ///     Dragon::default()
+    /// });
+    ///
+    /// allocator.reset();
+    ///
+    /// //The allocator has been totally reset, and all its content has been dropped.
+    /// //my_monster has printed "Monster is dying!".
+    /// //my_dragon has printed "Dragon is dying!".
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// ```
     pub fn reset(&self) {
         unsafe {
             self.storage.borrow().destroy();
@@ -251,6 +342,75 @@ impl StackAllocator {
 
     /// Reset partially the allocator, dropping all the content residing between the marker and
     /// the first unused memory address of the allocator.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_stack_allocator::StackAllocator;
+    ///
+    /// struct Monster {
+    ///     hp :u32,
+    /// }
+    ///
+    /// impl Default for Monster {
+    ///     fn default() -> Self {
+    ///         Monster {
+    ///         hp: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Monster {
+    ///     fn drop(&mut self) {
+    ///         println!("Monster is dying !");
+    ///     }
+    /// }
+    ///
+    /// struct Dragon {
+    ///     level: u8,
+    /// }
+    ///
+    /// impl Default for Dragon {
+    ///     fn default() -> Self {
+    ///         Dragon {
+    ///             level: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Dragon {
+    ///     fn drop(&mut self) {
+    ///         println!("Dragon is dying !");
+    ///     }
+    /// }
+    ///
+    /// let allocator = StackAllocator::with_capacity(100); // 100 bytes.
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker(), 0);
+    ///
+    /// let my_monster = allocator.alloc(|| {
+    ///     Monster::default()
+    /// });
+    ///
+    /// //After the monster allocation, get the index of the first unused memory address in the allocator.
+    /// let index_current_top = allocator.marker();
+    /// assert_ne!(index_current_top, 0);
+    ///
+    /// let my_dragon = allocator.alloc(|| {
+    ///     Dragon::default()
+    /// });
+    ///
+    /// assert_ne!(allocator.marker(), index_current_top);
+    ///
+    /// allocator.reset_to_marker(index_current_top);
+    ///
+    /// //The allocator has been partially reset, and all the content lying between the marker and
+    /// //the first unused memory address has been dropped.
+    /// //my_dragon has printed "Dragon is dying!".
+    ///
+    /// assert_eq!(allocator.marker(), index_current_top);
+    ///
+    /// ```
     pub fn reset_to_marker(&self, marker: usize) {
         unsafe {
             self.storage.borrow().destroy_to_marker(marker);
@@ -362,7 +522,7 @@ mod stack_allocator_test {
 
         alloc.reset_to_marker(top_stack_index);
 
-        //TODO: the another_monster must print "i'm dying !"
+        //another_monster prints "i'm dying". The drop function is called !
 
         current_top_stack_index = alloc.storage.borrow().fill();
         unsafe {
@@ -373,7 +533,7 @@ mod stack_allocator_test {
 
         alloc.reset();
 
-        //TODO: the my_monster must print "i'm dying !"
+        //my_monster prints "i'm dying". The drop function is called !
 
         current_top_stack_index = alloc.storage.borrow().fill();
         unsafe {

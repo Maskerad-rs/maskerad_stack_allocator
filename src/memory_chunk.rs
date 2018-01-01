@@ -1,4 +1,4 @@
-// Copyright 2017 Maskerad Developers
+// Copyright 2017-2018 Maskerad Developers
 //
 // Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
@@ -11,7 +11,7 @@ use core::mem;
 
 use utils;
 
-/// The MemoryChunk is a just a chunk of memory.
+/// The MemoryChunk is just a chunk of memory.
 /// It uses a [RawVec](https://doc.rust-lang.org/alloc/raw_vec/struct.RawVec.html) to allocate bytes
 /// in a vector-like fashion.
 ///
@@ -23,6 +23,8 @@ use utils;
 /// - The chunk extracts some info about the type (its virtual table) and place it next to the object. The chunk is able to call the drop method of the object
 /// with the virtual table.
 ///
+///
+/// You should not use the MemoryChunk directly. The allocators manage memory chunks, use them.
 pub struct MemoryChunk {
     storage: RawVec<u8>,
     /// Index of the first unused byte.
@@ -65,19 +67,42 @@ impl MemoryChunk {
 
     /// Drop the data contained in the chunk, starting from the given marker.
     pub unsafe fn destroy_to_marker(&self, marker: usize) {
+
+        //Get the index of the marker.
+        //We'll start dropping the content from this location.
         let mut index = marker;
+
+        //Get a raw pointer to the bottom of the memory storage.
         let storage_start = self.as_ptr();
+
+        //Get the index of the first unused memory address.
+        //We'll stop dropping the content when we are at this location.
         let fill = self.fill.get();
 
+        //While the starting index isn't the ending one...
         while index < fill {
+
+            //Get a raw pointer on the TypeDescription of the object.
             let type_description_data = storage_start.offset(index as isize) as *const usize;
+
+            //Decode this raw pointer to obtain the vtable of the object, and a boolean to know if
+            //the object has been initialized.
             let (type_description, is_done) = utils::un_bitpack_type_description_ptr(*type_description_data);
+
+            //Get the size and the alignment of the object, with its type description.
             let (size, alignment) = ((*type_description).size, (*type_description).alignment);
 
+            //Get the index of the memory address just after the type description.
+            //It's the unaligned memory address of the object.
             let after_type_description = index + mem::size_of::<*const utils::TypeDescription>();
 
+            //Get the aligned memory address, with the unaligned one and the alignment of the object.
+            //This is where the object *really* lives.
             let start = utils::round_up(after_type_description, alignment);
 
+            //If the object has been successfully initialized, we can call its drop function.
+            //We call the function pointer of the object's vtable, here drop_glue, and give him the pointer
+            //to the location of the object.
             if is_done {
                 ((*type_description).drop_glue)(storage_start.offset(start as isize) as *const i8);
             }
