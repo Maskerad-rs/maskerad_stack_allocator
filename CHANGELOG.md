@@ -60,3 +60,7 @@ is literally a container of stack allocators.
 I can't make a detailed changelog, everything has been refactored.
 
 Coming later : memory pools if all goes well.
+
+#### version 2.0.0 -> version 2.0.1
+
+Updated the README_CRATE.md and README.md, modified the badges and links to the crate and docs.
