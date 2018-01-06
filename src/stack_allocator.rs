@@ -5,24 +5,13 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-/*
-    Huge internal rewrite, based on the any-arena crate.
-
-    The AnyArena is literally a container of stack-allocators, which is able to grow when needed.
-
-    Allow us to :
-    - drop the stuff put into the stack allocator when needed (yay !)
-    - have a clearer design
-    - base our work on the work of people who actually know how to handle low-level stuff in Rust.
-*/
-
-
 use core::ptr;
 use std::cell::RefCell;
 use std::mem;
 
 use utils;
 use memory_chunk::MemoryChunk;
+
 
 
 /// A stack-based allocator for data implementing the Drop trait.
@@ -203,7 +192,7 @@ impl StackAllocator {
         //Get the index of the first unused byte in the memory chunk.
         let fill = non_copy_storage.fill();
 
-        //Get the index of where We'll write the type description data
+        //Get the index of where we'll write the type description data
         //(the first unused byte in the memory chunk).
         let type_description_start = fill;
 
@@ -215,7 +204,7 @@ impl StackAllocator {
         //according to its memory alignment.
         let start = utils::round_up(after_type_description, align);
 
-        //Determine the index of the next aligned memory address for a type description, according the the size of the object
+        //Determine the index of the next aligned memory address for a type description, according to the size of the object
         //and the memory alignment of a type description.
         let end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
@@ -234,7 +223,7 @@ impl StackAllocator {
 
             (
                 //From this raw pointer, get the correct raw pointers with
-                //the indexes we calculated earlier.
+                //the indices we calculated earlier.
 
                 //The raw pointer to the type description of the object.
                 start_storage.offset(type_description_start as isize),

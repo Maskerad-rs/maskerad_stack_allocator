@@ -25,6 +25,8 @@
 //!
 //! This is a nightly-only library.
 
+
+
 #![feature(alloc)]
 #![feature(offset_to)]
 #![feature(allocator_api)]
@@ -36,6 +38,9 @@
 extern crate alloc;
 extern crate core;
 
+
+
+
 mod stack_allocator;
 mod double_buffered_allocator;
 mod double_ended_allocator;
@@ -43,6 +48,10 @@ mod memory_chunk;
 mod stack_allocator_copy;
 mod double_buffered_allocator_copy;
 mod double_ended_allocator_copy;
+mod pool_allocator_copy;
+mod pool_item;
+mod allocation_error;
+mod pool_allocator;
 
 pub mod utils;
 
