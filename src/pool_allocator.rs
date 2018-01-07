@@ -13,7 +13,9 @@ use utils;
 use allocation_error::{AllocationResult, AllocationError};
 use unique_ptr::UniquePtr;
 
-
+//TODO: is Vec really needed, isn't RawVec sufficient for our use case ?
+//Vec drops all our PoolItems, which contain a MemoryChunk holding a rawvec
+//TODO: We must assure that all our smart pointers are destroyed before the pool...
 pub struct PoolAllocator {
     storage: Vec<RefCell<PoolItem>>,
     first_available: Cell<Option<usize>>,
@@ -23,10 +25,10 @@ impl PoolAllocator {
     pub fn new(nb_item: usize, size_item: usize) -> Self {
         let mut storage = Vec::with_capacity(nb_item);
         for i in 0..nb_item - 1 {
-            storage[i] = RefCell::new(PoolItem::new(size_item, Some(i+1)));
+            storage.push(RefCell::new(PoolItem::new(size_item, Some(i+1))));
         }
 
-        storage[nb_item - 1] = RefCell::new(PoolItem::new(size_item, None));
+        storage.push(RefCell::new(PoolItem::new(size_item, None)));
 
         PoolAllocator {
             storage,
@@ -49,7 +51,6 @@ impl PoolAllocator {
         self.first_available.set(first_available);
     }
 
-    //TODO: not a &mut T, a UniquePtr or SharedPtr or something like that.
     #[inline]
     pub fn alloc_unique<T, F>(&self, op: F) -> AllocationResult<UniquePtr<T>>
         where F: FnOnce() -> T
@@ -199,6 +200,10 @@ mod pool_allocator_test {
         let a_monster = pool.alloc_unique(|| {
             Monster::new(3)
         }).unwrap();
+        panic!();
+        //The monster, internally, is dropped, when passed to UniquePtr::from_raw, which call from_unique,
+        //which call Unique::new_unchecked(raw_ptr).
+        //TODO: I think we need Intermediate places... Place (InterUniquePtr), InPlace (InterUniquePtr), Placer (Pool), BoxPlace(InterUniquePtr), Boxed(UniquePtr).
 
         //The index of the first available pool item is 1.
         assert_eq!(pool.first_available.get(), Some(1));
@@ -213,9 +218,11 @@ mod pool_allocator_test {
             assert_eq!(pool.first_available.get(), None);
 
             //Since no pool items are available, we'll get an error if we try to allocate something.
+            /*
             assert!(pool.alloc_unique(|| {
                 Monster::default()
             }).is_err());
+            */
 
             //another_monster will be dropped and should print "i'm dying !".
         }
@@ -227,6 +234,7 @@ mod pool_allocator_test {
         }).is_ok())
     }
 
+    /*
     #[test]
     fn test_unique_ptr_behavior() {
 
@@ -241,4 +249,5 @@ mod pool_allocator_test {
     fn test_trait_object_with_smart_ptr() {
 
     }
+    */
 }
