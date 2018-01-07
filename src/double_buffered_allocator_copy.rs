@@ -6,6 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use StackAllocatorCopy;
+use allocation_error::{AllocationResult, AllocationError};
 
 /// A double-buffered allocator for data implementing the Copy trait.
 ///
@@ -66,7 +67,7 @@ impl DoubleBufferedAllocatorCopy {
     /// # Panic
     /// This function will panic if the allocation exceeds the maximum storage capacity of the active allocator.
     ///
-    pub fn alloc<T: Copy, F>(&self, op: F) -> &mut T
+    pub fn alloc<T: Copy, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         self.active_buffer().alloc(op)
@@ -144,7 +145,7 @@ mod double_buffer_allocator_test {
 
         let _my_beef = alloc.alloc(|| {
             0xb33f as i32
-        });
+        }).unwrap();
 
         let index_active_buffer_top_stack = alloc.active_buffer().marker();
         let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
@@ -192,7 +193,7 @@ mod double_buffer_allocator_test {
         alloc.swap_buffers();
         let _my_i32 = alloc.alloc(|| {
             25
-        });
+        }).unwrap();
         let index_first_buffer_top_stack = alloc.buffers[0].marker();
         let index_second_buffer_top_stack = alloc.buffers[1].marker();
 

@@ -6,6 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use StackAllocator;
+use allocation_error::{AllocationError, AllocationResult};
 
 /// A double-buffered allocator for data implementing the Drop trait.
 ///
@@ -51,7 +52,7 @@ use StackAllocator;
 ///     //After the next frame, the monster will be dropped and print "i'm dying!".
 ///     let my_monster = allocator.alloc(|| {
 ///         Monster::default()
-///     });
+///     }).unwrap();
 ///
 ///     closed = true;
 /// }
@@ -86,7 +87,7 @@ impl DoubleBufferedAllocator {
     /// # Panic
     /// This function will panic if the allocation exceeds the maximum storage capacity of the active allocator.
     ///
-    pub fn alloc<T, F>(&self, op: F) -> &mut T
+    pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         self.active_buffer().alloc(op)
@@ -183,7 +184,7 @@ mod double_buffer_allocator_test {
 
         let _my_monster = alloc.alloc(|| {
             Monster::default()
-        });
+        }).unwrap();
 
         let index_active_buffer_top_stack = alloc.active_buffer().marker();
         let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
@@ -231,7 +232,7 @@ mod double_buffer_allocator_test {
         alloc.swap_buffers();
         let _my_monster = alloc.alloc(|| {
             Monster::default()
-        });
+        }).unwrap();
         let index_first_buffer_top_stack = alloc.buffers[0].marker();
         let index_second_buffer_top_stack = alloc.buffers[1].marker();
 

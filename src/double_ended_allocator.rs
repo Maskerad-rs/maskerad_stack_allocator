@@ -21,6 +21,7 @@ use core::ptr;
 use std::cell::RefCell;
 use std::mem;
 
+use allocation_error::{AllocationError, AllocationResult};
 use utils;
 use memory_chunk::{ChunkType, MemoryChunk};
 
@@ -119,7 +120,7 @@ use memory_chunk::{ChunkType, MemoryChunk};
 /// }
 ///
 /// //50 bytes for each memory chunk.
-/// let double_ended_allocator = DoubleEndedStackAllocator::with_capacity(100);
+/// let double_ended_allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
 /// let allocator = StackAllocator::with_capacity(100);
 ///
 ///
@@ -130,12 +131,12 @@ use memory_chunk::{ChunkType, MemoryChunk};
 ///
 /// let my_config = allocator.alloc(|| {
 ///     LevelConfig::new(42)
-/// });
+/// }).unwrap();
 ///
 /// //Now create the level.
 /// let my_level = allocator.alloc(|| {
 ///     Level::from_config(my_config)
-/// });
+/// }).unwrap();
 ///
 /// //We got our level, let's drop the config allocated in the allocator !
 /// allocator.reset_to_marker(allocator_marker);
@@ -148,11 +149,11 @@ use memory_chunk::{ChunkType, MemoryChunk};
 ///
 /// let my_config = double_ended_allocator.alloc(&ChunkType::TempData, || {
 ///     LevelConfig::new(42)
-/// });
+/// }).unwrap();
 ///
 /// let my_level = double_ended_allocator.alloc(&ChunkType::ResidentData, || {
 ///     Level::from_config(my_config)
-/// });
+/// }).unwrap();
 ///
 /// double_ended_allocator.reset(&ChunkType::TempData);
 /// // "LevelConfig dropped."
@@ -175,14 +176,14 @@ impl DoubleEndedStackAllocator {
     /// #![feature(alloc)]
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
     ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(100);
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
     /// assert_eq!(allocator.temp_storage().borrow().capacity(), 50);
     /// assert_eq!(allocator.resident_storage().borrow().capacity(), 50);
     /// ```
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity_resident: usize, capacity_temporary: usize) -> Self {
         DoubleEndedStackAllocator {
-            storage_resident: RefCell::new(MemoryChunk::new(capacity / 2)),
-            storage_temp: RefCell::new(MemoryChunk::new(capacity / 2)),
+            storage_resident: RefCell::new(MemoryChunk::new(capacity_resident)),
+            storage_temp: RefCell::new(MemoryChunk::new(capacity_temporary)),
         }
     }
 
@@ -226,21 +227,21 @@ impl DoubleEndedStackAllocator {
     ///     }
     /// }
     ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(100);
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
     ///
     /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
     ///     Monster::default()
-    /// });
+    /// }).unwrap();
     ///
     /// let another_monster = allocator.alloc(&ChunkType::ResidentData, || {
     ///     Monster::default()
-    /// });
+    /// }).unwrap();
     ///
     /// assert_eq!(my_monster.level, 1);
     /// assert_eq!(another_monster.hp, 1);
     /// ```
     #[inline]
-    pub fn alloc<T, F>(&self, chunk: &ChunkType, op: F) -> &mut T
+    pub fn alloc<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         self.alloc_non_copy(chunk, op)
@@ -252,7 +253,7 @@ impl DoubleEndedStackAllocator {
 
     /// The function actually writing data in the memory chunk
     #[inline]
-    fn alloc_non_copy<T, F>(&self, chunk: &ChunkType, op: F) -> &mut T
+    fn alloc_non_copy<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
@@ -260,7 +261,7 @@ impl DoubleEndedStackAllocator {
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
-            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>());
+            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //Cast them.
             let type_description_ptr = type_description_ptr as *mut usize;
@@ -278,14 +279,14 @@ impl DoubleEndedStackAllocator {
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
             //Return a mutable reference to the object.
-            &mut *ptr
+            Ok(&mut *ptr)
         }
     }
 
     /// The function asking the memory chunk to give us raw pointers to memory locations and update
     /// the current top of the stack.
     #[inline]
-    fn alloc_non_copy_inner(&self, chunk: &ChunkType, n_bytes: usize, align: usize) -> (*const u8, *const u8) {
+    fn alloc_non_copy_inner(&self, chunk: &ChunkType, n_bytes: usize, align: usize) -> AllocationResult<(*const u8, *const u8)> {
 
         match chunk {
             &ChunkType::TempData => {
@@ -311,7 +312,9 @@ impl DoubleEndedStackAllocator {
                 //and the memory alignment of a type description.
                 let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
-                assert!(end < non_copy_temp_storage.capacity());
+                if end >= non_copy_temp_storage.capacity() {
+                    return Err(AllocationError::OutOfMemoryError(format!("The temporary storage of the double ended allocator is out of memory !")));
+                }
 
                 //Update the current top of the stack.
                 //The first unused memory address is at index 'end',
@@ -323,7 +326,7 @@ impl DoubleEndedStackAllocator {
                     // Get a raw pointer to the start of our MemoryChunk's RawVec
                     let start_storage = non_copy_temp_storage.as_ptr();
 
-                    (
+                    Ok((
                         //From this raw pointer, get the correct raw pointers with
                         //the indexes we calculated earlier.
 
@@ -332,7 +335,7 @@ impl DoubleEndedStackAllocator {
 
                         //The raw pointer to the object.
                         start_storage.offset(start as isize)
-                    )
+                    ))
                 }
             },
             &ChunkType::ResidentData => {
@@ -358,7 +361,9 @@ impl DoubleEndedStackAllocator {
                 //and the memory alignment of a type description.
                 let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
-                assert!(end < non_copy_resident_storage.capacity());
+                if end >= non_copy_resident_storage.capacity() {
+                    return Err(AllocationError::OutOfMemoryError(format!("The resident storage of the double ended allocator is out of memory !")));
+                }
 
                 //Update the current top of the stack.
                 //The first unused memory address is at index 'end',
@@ -370,7 +375,7 @@ impl DoubleEndedStackAllocator {
                     // Get a raw pointer to the start of our MemoryChunk's RawVec
                     let start_storage = non_copy_resident_storage.as_ptr();
 
-                    (
+                    Ok((
                         //From this raw pointer, get the correct raw pointers with
                         //the indexes we calculated earlier.
 
@@ -379,7 +384,7 @@ impl DoubleEndedStackAllocator {
 
                         //The raw pointer to the object.
                         start_storage.offset(start as isize)
-                    )
+                    ))
                 }
             },
         }
@@ -393,7 +398,7 @@ impl DoubleEndedStackAllocator {
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
     /// use maskerad_memory_allocators::ChunkType;
     ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(100); //50 bytes for each memory chunk.
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50); //50 bytes for each memory chunk.
     ///
     /// //Get the raw pointer to the bottom of the memory chunk used for temp data.
     /// let start_allocator_temp = allocator.temp_storage().borrow().as_ptr();
@@ -466,7 +471,7 @@ impl DoubleEndedStackAllocator {
     ///     }
     /// }
     ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(100); // 50 bytes for each memory chunk.
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50); // 50 bytes for each memory chunk.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
@@ -474,13 +479,13 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
     ///     Monster::default()
-    /// });
+    /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(&ChunkType::TempData), 0);
     ///
     /// let my_dragon = allocator.alloc(&ChunkType::TempData, || {
     ///     Dragon::default()
-    /// });
+    /// }).unwrap();
     ///
     /// allocator.reset(&ChunkType::TempData);
     ///
@@ -553,14 +558,14 @@ impl DoubleEndedStackAllocator {
     ///     }
     /// }
     ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(100); // 100 bytes.
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50); // 50 bytes for each memory chunk.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
     ///
     /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
     ///     Monster::default()
-    /// });
+    /// }).unwrap();
     ///
     /// //After the monster allocation, get the index of the first unused memory address in the memory chunk used for temp data.
     /// let index_current_temp = allocator.marker(&ChunkType::TempData);
@@ -568,7 +573,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_dragon = allocator.alloc(&ChunkType::TempData, || {
     ///     Dragon::default()
-    /// });
+    /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(&ChunkType::TempData), index_current_temp);
     ///
@@ -644,7 +649,7 @@ mod double_ended_stack_allocator_test {
     fn creation_with_right_capacity() {
         unsafe {
             //create a StackAllocator with the specified size.
-            let alloc = DoubleEndedStackAllocator::with_capacity(200);
+            let alloc = DoubleEndedStackAllocator::with_capacity(100, 100);
             let start_chunk_temp = alloc.storage_temp.borrow().as_ptr();
             let start_chunk_resident = alloc.storage_resident.borrow().as_ptr();
             let first_unused_mem_addr_temp = start_chunk_temp.offset(alloc.storage_temp.borrow().fill() as isize);
@@ -659,14 +664,14 @@ mod double_ended_stack_allocator_test {
     #[test]
     fn allocation_test() {
         //We allocate 200 bytes of memory.
-        let alloc = DoubleEndedStackAllocator::with_capacity(200);
+        let alloc = DoubleEndedStackAllocator::with_capacity(100, 100);
 
         let start_alloc_temp = alloc.storage_temp.borrow().as_ptr();
         let start_alloc_resident = alloc.storage_resident.borrow().as_ptr();
 
         let _my_monster = alloc.alloc(&ChunkType::TempData, || {
             Monster::new(1)
-        });
+        }).unwrap();
 
         unsafe {
 
@@ -679,7 +684,7 @@ mod double_ended_stack_allocator_test {
 
         let _my_monster = alloc.alloc(&ChunkType::ResidentData, || {
             Monster::new(1)
-        });
+        }).unwrap();
 
         unsafe {
             let top_stack_temp = start_alloc_temp.offset(alloc.marker(&ChunkType::TempData) as isize);
@@ -693,7 +698,7 @@ mod double_ended_stack_allocator_test {
     //Use 'cargo test -- --nocapture' to see the monsters' println!s
     #[test]
     fn test_reset() {
-        let alloc = DoubleEndedStackAllocator::with_capacity(200);
+        let alloc = DoubleEndedStackAllocator::with_capacity(100, 100);
 
         let top_stack_index_temp = alloc.marker(&ChunkType::TempData);
 
@@ -702,7 +707,7 @@ mod double_ended_stack_allocator_test {
 
         let _my_monster = alloc.alloc(&ChunkType::TempData, || {
             Monster::new(1)
-        });
+        }).unwrap();
 
         unsafe {
             let top_stack_temp = start_alloc_temp.offset(alloc.marker(&ChunkType::TempData) as isize);
@@ -714,7 +719,7 @@ mod double_ended_stack_allocator_test {
 
         let _another_monster = alloc.alloc(&ChunkType::ResidentData, || {
             Monster::default()
-        });
+        }).unwrap();
 
         unsafe {
             let top_stack_temp = start_alloc_temp.offset(alloc.marker(&ChunkType::TempData) as isize);

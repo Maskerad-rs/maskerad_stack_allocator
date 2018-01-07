@@ -10,6 +10,7 @@ use std::mem;
 use core::ptr;
 use std::cell::RefCell;
 
+use allocation_error::{AllocationError, AllocationResult};
 use utils;
 
 /// A stack-based allocator for data implementing the Copy trait.
@@ -89,11 +90,11 @@ impl StackAllocatorCopy {
     ///
     /// let my_i32 = allocator.alloc(|| {
     ///     26 as i32
-    /// });
+    /// }).unwrap();
     /// assert_eq!(my_i32, &mut 26);
     /// ```
     #[inline]
-    pub fn alloc<T: Copy, F>(&self, op: F) -> &mut T
+    pub fn alloc<T: Copy, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         self.alloc_copy(op)
@@ -101,12 +102,12 @@ impl StackAllocatorCopy {
 
     //Functions for the copyable part of the stack allocator.
     #[inline]
-    fn alloc_copy<T: Copy, F>(&self, op: F) -> &mut T
+    fn alloc_copy<T: Copy, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
             //Get an aligned raw pointer to place the object in it.
-            let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>());
+            let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //cast this raw pointer to the type of the object.
             let ptr = ptr as *mut T;
@@ -115,12 +116,12 @@ impl StackAllocatorCopy {
             ptr::write(&mut (*ptr), op());
 
             //return a mutable reference to this pointer.
-            &mut *ptr
+            Ok(&mut *ptr)
         }
     }
 
     #[inline]
-    fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> *const u8 {
+    fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
         //borrow mutably the memory chunk used by the allocator.
         let copy_storage = self.storage.borrow_mut();
 
@@ -134,7 +135,9 @@ impl StackAllocatorCopy {
         let end = start + n_bytes;
 
         //We don't grow the capacity, or create another chunk.
-        assert!(end < copy_storage.capacity());
+        if end >= copy_storage.capacity() {
+            return Err(AllocationError::OutOfPoolError(format!("The copy stack allocator is out of memory !")));
+        }
 
         //Set the first unused memory address of the memory chunk to the index calculated earlier.
         copy_storage.set_fill(end);
@@ -142,7 +145,7 @@ impl StackAllocatorCopy {
         unsafe {
             //Return the raw pointer to the aligned memory location, which will be used to place
             //the object in the allocator.
-            copy_storage.as_ptr().offset(start as isize)
+            Ok(copy_storage.as_ptr().offset(start as isize))
         }
     }
 
@@ -189,12 +192,12 @@ impl StackAllocatorCopy {
     ///
     /// let an_u8 = allocator.alloc(|| {
     ///     15 as u8
-    /// });
+    /// }).unwrap();
     /// assert_ne!(allocator.marker(), 0);
     ///
     /// let bob = allocator.alloc(|| {
     ///     0xb0b as u64
-    /// });
+    /// }).unwrap();
     ///
     /// allocator.reset();
     ///
@@ -219,7 +222,7 @@ impl StackAllocatorCopy {
     ///
     /// let an_i32 = allocator.alloc(|| {
     ///     45 as i32
-    /// });
+    /// }).unwrap();
     ///
     /// //After the i32 allocation, get the index of the first unused memory address in the allocator.
     /// let index_current_top = allocator.marker();
@@ -227,7 +230,7 @@ impl StackAllocatorCopy {
     ///
     /// let an_i64 = allocator.alloc(|| {
     ///     450 as i64
-    /// });
+    /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(), index_current_top);
     ///
@@ -270,7 +273,7 @@ mod stack_allocator_copy_test {
 
         let _test_1_byte = alloc.alloc(|| {
             3 as u8
-        });
+        }).unwrap();
         let current_top_index = alloc.marker();
         //misaligned by 1 + size of 1 byte = 2.
         assert_eq!(current_top_index, 2);
@@ -280,7 +283,7 @@ mod stack_allocator_copy_test {
 
         let _test_4_bytes = alloc.alloc(|| {
             60000 as u32
-        });
+        }).unwrap();
         let current_top_index = alloc.marker();
         //2 + misaligned by 2 + size of 4 byte = 8.
         assert_eq!(current_top_index, 8);
@@ -290,7 +293,7 @@ mod stack_allocator_copy_test {
 
         let _test_8_bytes = alloc.alloc(|| {
             100000 as u64
-        });
+        }).unwrap();
         let current_top_index = alloc.marker();
         //8 + misaligned by 8 + size of 8 = 24
         assert_eq!(current_top_index, 24);
@@ -310,7 +313,7 @@ mod stack_allocator_copy_test {
 
         let _my_u64 = alloc.alloc(|| {
             7894 as u64
-        });
+        }).unwrap();
 
         let index_current_top = alloc.marker();
         unsafe {
@@ -320,7 +323,7 @@ mod stack_allocator_copy_test {
 
         let _bob = alloc.alloc(|| {
             0xb0b as u64
-        });
+        }).unwrap();
 
 
         unsafe {

@@ -21,6 +21,7 @@ use core::ptr;
 use std::cell::RefCell;
 use std::mem;
 
+use allocation_error::{AllocationError, AllocationResult};
 use utils;
 use memory_chunk::{ChunkType, MemoryChunk};
 
@@ -76,14 +77,14 @@ impl DoubleEndedStackAllocatorCopy {
     /// #![feature(alloc)]
     /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
     ///
-    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100);
+    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(50, 50);
     /// assert_eq!(allocator.temp_storage().borrow().capacity(), 50);
     /// assert_eq!(allocator.resident_storage().borrow().capacity(), 50);
     /// ```
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity_resident: usize, capacity_temporary: usize) -> Self {
         DoubleEndedStackAllocatorCopy {
-            storage_resident: RefCell::new(MemoryChunk::new(capacity / 2)),
-            storage_temp: RefCell::new(MemoryChunk::new(capacity / 2)),
+            storage_resident: RefCell::new(MemoryChunk::new(capacity_resident)),
+            storage_temp: RefCell::new(MemoryChunk::new(capacity_temporary)),
         }
     }
 
@@ -108,21 +109,21 @@ impl DoubleEndedStackAllocatorCopy {
     /// use maskerad_memory_allocators::ChunkType;
     ///
     ///
-    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100);
+    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(50, 50);
     ///
     /// let my_u64 = allocator.alloc(&ChunkType::TempData, || {
     ///     4587 as u64
-    /// });
+    /// }).unwrap();
     ///
     /// let bob = allocator.alloc(&ChunkType::ResidentData, || {
     ///     0xb0b as u64
-    /// });
+    /// }).unwrap();
     ///
     /// assert_eq!(my_u64, &mut 4587);
     /// assert_eq!(bob, &mut 0xb0b);
     /// ```
     #[inline]
-    pub fn alloc<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> &mut T
+    pub fn alloc<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         self.alloc_copy(chunk, op)
@@ -134,12 +135,12 @@ impl DoubleEndedStackAllocatorCopy {
 
     /// The function actually writing data in the memory chunk
     #[inline]
-    fn alloc_copy<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> &mut T
+    fn alloc_copy<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
             //Get an aligned raw pointer to place the object in it.
-            let ptr = self.alloc_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>());
+            let ptr = self.alloc_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //cast this raw pointer to the type of the object.
             let ptr = ptr as *mut T;
@@ -148,14 +149,14 @@ impl DoubleEndedStackAllocatorCopy {
             ptr::write(&mut (*ptr), op());
 
             //Return a mutable reference to the object.
-            &mut *ptr
+            Ok(&mut *ptr)
         }
     }
 
     /// The function asking the memory chunk to give us raw pointers to memory locations and update
     /// the current top of the stack.
     #[inline]
-    fn alloc_copy_inner(&self, chunk: &ChunkType, n_bytes: usize, align: usize) -> *const u8 {
+    fn alloc_copy_inner(&self, chunk: &ChunkType, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
 
         match chunk {
             &ChunkType::TempData => {
@@ -171,7 +172,9 @@ impl DoubleEndedStackAllocatorCopy {
                 //Get the index of the future first unused memory address, according to the size of the object.
                 let mut end = start + n_bytes;
 
-                assert!(end < copy_storage_temp.capacity());
+                if end >= copy_storage_temp.capacity() {
+                    return Err(AllocationError::OutOfMemoryError(format!("The temporary storage of the copy double ended allocator is out of memory !")));
+                }
 
 
 
@@ -184,7 +187,7 @@ impl DoubleEndedStackAllocatorCopy {
                 unsafe {
                     //Return the raw pointer to the aligned memory location, which will be used to place
                     //the object in the allocator.
-                    copy_storage_temp.as_ptr().offset(start as isize)
+                    Ok(copy_storage_temp.as_ptr().offset(start as isize))
                 }
             },
             &ChunkType::ResidentData => {
@@ -200,7 +203,9 @@ impl DoubleEndedStackAllocatorCopy {
                 //Get the index of the future first unused memory address, according to the size of the object.
                 let mut end = start + n_bytes;
 
-                assert!(end < copy_storage_resident.capacity());
+                if end >= copy_storage_resident.capacity() {
+                    return Err(AllocationError::OutOfMemoryError(format!("The resideent storage of copy double ended allocator is out of memory !")));
+                }
 
 
 
@@ -213,7 +218,7 @@ impl DoubleEndedStackAllocatorCopy {
                 unsafe {
                     //Return the raw pointer to the aligned memory location, which will be used to place
                     //the object in the allocator.
-                    copy_storage_resident.as_ptr().offset(start as isize)
+                    Ok(copy_storage_resident.as_ptr().offset(start as isize))
                 }
             },
         }
@@ -227,7 +232,7 @@ impl DoubleEndedStackAllocatorCopy {
     /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
     /// use maskerad_memory_allocators::ChunkType;
     ///
-    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100); //50 bytes for each memory chunk.
+    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(50, 50); //50 bytes for each memory chunk.
     ///
     /// //Get the raw pointer to the bottom of the memory chunk used for temp data.
     /// let start_allocator_temp = allocator.temp_storage().borrow().as_ptr();
@@ -265,7 +270,7 @@ impl DoubleEndedStackAllocatorCopy {
     /// use maskerad_memory_allocators::ChunkType;
     ///
     ///
-    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100); // 50 bytes for each memory chunk.
+    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(50, 50); // 50 bytes for each memory chunk.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
@@ -273,13 +278,13 @@ impl DoubleEndedStackAllocatorCopy {
     ///
     /// let my_u64 = allocator.alloc(&ChunkType::TempData, || {
     ///     456 as u64
-    /// });
+    /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(&ChunkType::TempData), 0);
     ///
     /// let my_i32 = allocator.alloc(&ChunkType::TempData, || {
     ///     12 as i32
-    /// });
+    /// }).unwrap();
     ///
     /// allocator.reset(&ChunkType::TempData);
     ///
@@ -309,14 +314,14 @@ impl DoubleEndedStackAllocatorCopy {
     /// use maskerad_memory_allocators::ChunkType;
     ///
     ///
-    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(100); // 100 bytes.
+    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(50, 50); // 100 bytes.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
     ///
     /// let my_u64 = allocator.alloc(&ChunkType::TempData, || {
     ///     123 as u64
-    /// });
+    /// }).unwrap();
     ///
     /// //After the u64 allocation, get the index of the first unused memory address in the memory chunk used for temp data.
     /// let index_current_temp = allocator.marker(&ChunkType::TempData);
@@ -324,7 +329,7 @@ impl DoubleEndedStackAllocatorCopy {
     ///
     /// let my_i32 = allocator.alloc(&ChunkType::TempData, || {
     ///     321 as i32
-    /// });
+    /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(&ChunkType::TempData), index_current_temp);
     ///
@@ -355,7 +360,7 @@ mod double_ended_stack_allocator_copy_test {
     fn creation_with_right_capacity() {
         unsafe {
             //create a StackAllocator with the specified size.
-            let alloc = DoubleEndedStackAllocatorCopy::with_capacity(200);
+            let alloc = DoubleEndedStackAllocatorCopy::with_capacity(100, 100);
 
             let start_chunk_temp = alloc.storage_temp.borrow().as_ptr();
             let first_unused_mem_addr_temp = start_chunk_temp.offset(alloc.marker(&ChunkType::TempData) as isize);
@@ -374,12 +379,12 @@ mod double_ended_stack_allocator_copy_test {
         //Check the allocation with u8, u32 an u64, to verify the alignment behavior.
 
         //We allocate 200 bytes of memory.
-        let alloc = DoubleEndedStackAllocatorCopy::with_capacity(200);
+        let alloc = DoubleEndedStackAllocatorCopy::with_capacity(100, 100);
 
 
         let _test_1_byte = alloc.alloc(&ChunkType::TempData, || {
             3 as u8
-        });
+        }).unwrap();
         let current_top_index_temp = alloc.marker(&ChunkType::TempData);
         let current_top_index_resident = alloc.marker(&ChunkType::ResidentData);
         //misaligned by 1 + size of 1 byte = 2.
@@ -392,7 +397,7 @@ mod double_ended_stack_allocator_copy_test {
 
         let _test_4_bytes = alloc.alloc(&ChunkType::TempData, || {
             60000 as u32
-        });
+        }).unwrap();
         let current_top_index_temp = alloc.marker(&ChunkType::TempData);
         let current_top_index_resident = alloc.marker(&ChunkType::ResidentData);
         //2 + misaligned by 2 + size of 4 byte = 8.
@@ -405,7 +410,7 @@ mod double_ended_stack_allocator_copy_test {
 
         let _test_8_bytes = alloc.alloc(&ChunkType::ResidentData, || {
             100000 as u64
-        });
+        }).unwrap();
         let current_top_index_temp = alloc.marker(&ChunkType::TempData);
         let current_top_index_resident = alloc.marker(&ChunkType::ResidentData);
         //misaligned by 8 + 8 size = 16
@@ -417,7 +422,7 @@ mod double_ended_stack_allocator_copy_test {
 
     #[test]
     fn test_reset() {
-        let alloc = DoubleEndedStackAllocatorCopy::with_capacity(200);
+        let alloc = DoubleEndedStackAllocatorCopy::with_capacity(100, 100);
         let start_chunk_temp = alloc.storage_temp.borrow().as_ptr();
         let start_chunk_resident = alloc.storage_resident.borrow().as_ptr();
 
@@ -433,7 +438,7 @@ mod double_ended_stack_allocator_copy_test {
 
         let _my_u64 = alloc.alloc(&ChunkType::TempData, || {
             7894 as u64
-        });
+        }).unwrap();
 
         unsafe {
             let current_top_temp = start_chunk_temp.offset(alloc.marker(&ChunkType::TempData) as isize);
@@ -445,7 +450,7 @@ mod double_ended_stack_allocator_copy_test {
 
         let _bob = alloc.alloc(&ChunkType::ResidentData, || {
             0xb0b as u64
-        });
+        }).unwrap();
 
         unsafe {
             let current_top_temp = start_chunk_temp.offset(alloc.marker(&ChunkType::TempData) as isize);

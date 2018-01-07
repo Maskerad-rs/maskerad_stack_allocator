@@ -9,6 +9,7 @@ use core::ptr;
 use std::cell::RefCell;
 use std::mem;
 
+use allocation_error::{AllocationError, AllocationResult};
 use utils;
 use memory_chunk::MemoryChunk;
 
@@ -89,7 +90,7 @@ use memory_chunk::MemoryChunk;
 ///     //Be sure to use the data during this frame only!
 ///     let my_monster = single_frame_allocator.alloc(|| {
 ///         Monster::default()
-///     });
+///     }).unwrap();
 ///
 ///     assert_eq!(my_monster.level, 1);
 ///     closed = true;
@@ -136,11 +137,11 @@ impl StackAllocator {
     ///
     /// let my_i32 = allocator.alloc(|| {
     ///     26 as i32
-    /// });
+    /// }).unwrap();
     /// assert_eq!(my_i32, &mut 26);
     /// ```
     #[inline]
-    pub fn alloc<T, F>(&self, op: F) -> &mut T
+    pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         self.alloc_non_copy(op)
@@ -152,7 +153,7 @@ impl StackAllocator {
 
     /// The function actually writing data in the memory chunk
     #[inline]
-    fn alloc_non_copy<T, F>(&self, op: F) -> &mut T
+    fn alloc_non_copy<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
@@ -160,7 +161,7 @@ impl StackAllocator {
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
-            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>());
+            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //Cast them.
             let type_description_ptr = type_description_ptr as *mut usize;
@@ -178,14 +179,14 @@ impl StackAllocator {
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
             //Return a mutable reference to the object.
-            &mut *ptr
+            Ok(&mut *ptr)
         }
     }
 
     /// The function asking the memory chunk to give us raw pointers to memory locations and update
     /// the current top of the stack.
     #[inline]
-    fn alloc_non_copy_inner(&self, n_bytes: usize, align: usize) -> (*const u8, *const u8) {
+    fn alloc_non_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<(*const u8, *const u8)> {
         //mutably borrow the memory chunk.
         let non_copy_storage = self.storage.borrow_mut();
 
@@ -209,7 +210,9 @@ impl StackAllocator {
         let end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
         //If the allocator becomes oom after this possible allocation, abort the program.
-        assert!(end < non_copy_storage.capacity());
+        if end >= non_copy_storage.capacity() {
+            return Err(AllocationError::OutOfMemoryError(format!("The stack allocator is out of memory !")));
+        }
 
         //Update the current top of the stack.
         //The first unused memory address is at index 'end',
@@ -221,7 +224,7 @@ impl StackAllocator {
             // Get a raw pointer to the start of our MemoryChunk's RawVec
             let start_storage = non_copy_storage.as_ptr();
 
-            (
+            Ok((
                 //From this raw pointer, get the correct raw pointers with
                 //the indices we calculated earlier.
 
@@ -230,7 +233,7 @@ impl StackAllocator {
 
                 //The raw pointer to the object.
                 start_storage.offset(start as isize)
-            )
+            ))
         }
     }
 
@@ -312,12 +315,12 @@ impl StackAllocator {
     ///
     /// let my_monster = allocator.alloc(|| {
     ///     Monster::default()
-    /// });
+    /// }).unwrap();
     /// assert_ne!(allocator.marker(), 0);
     ///
     /// let my_dragon = allocator.alloc(|| {
     ///     Dragon::default()
-    /// });
+    /// }).unwrap();
     ///
     /// allocator.reset();
     ///
@@ -384,7 +387,7 @@ impl StackAllocator {
     ///
     /// let my_monster = allocator.alloc(|| {
     ///     Monster::default()
-    /// });
+    /// }).unwrap();
     ///
     /// //After the monster allocation, get the index of the first unused memory address in the allocator.
     /// let index_current_top = allocator.marker();
@@ -392,7 +395,7 @@ impl StackAllocator {
     ///
     /// let my_dragon = allocator.alloc(|| {
     ///     Dragon::default()
-    /// });
+    /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(), index_current_top);
     ///
@@ -471,7 +474,7 @@ mod stack_allocator_test {
 
         let _my_monster = alloc.alloc(|| {
             Monster::new(1)
-        });
+        }).unwrap();
 
         unsafe {
             let start_alloc = alloc.storage.borrow().as_ptr();
@@ -487,7 +490,7 @@ mod stack_allocator_test {
         let alloc = StackAllocator::with_capacity(200);
         let _my_monster = alloc.alloc(|| {
             Monster::new(1)
-        });
+        }).unwrap();
 
         let top_stack_index = alloc.marker();
         let start_alloc = alloc.storage.borrow().as_ptr();
@@ -501,7 +504,7 @@ mod stack_allocator_test {
 
         let _another_monster = alloc.alloc(|| {
             Monster::default()
-        });
+        }).unwrap();
 
         current_top_stack_index = alloc.storage.borrow().fill();
 
