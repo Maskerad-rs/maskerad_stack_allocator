@@ -28,4 +28,8 @@ impl PoolItem {
     pub fn next(&self) -> Option<usize> {
         self.next
     }
+
+    pub fn set_next(&mut self, next: Option<usize>) {
+        self.next = next;
+    }
 }

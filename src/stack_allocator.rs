@@ -14,7 +14,6 @@ use utils;
 use memory_chunk::MemoryChunk;
 
 
-
 /// A stack-based allocator for data implementing the Drop trait.
 ///
 /// It manages a **MemoryChunk** to:

@@ -34,12 +34,10 @@
 #![feature(heap_api)]
 #![feature(core_intrinsics)]
 #![feature(shared)]
+#![feature(unique)]
 
 extern crate alloc;
 extern crate core;
-
-
-
 
 mod stack_allocator;
 mod double_buffered_allocator;
@@ -52,6 +50,7 @@ mod pool_allocator_copy;
 mod pool_item;
 mod allocation_error;
 mod pool_allocator;
+mod unique_ptr;
 
 pub mod utils;
 
