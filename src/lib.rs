@@ -35,6 +35,8 @@
 #![feature(core_intrinsics)]
 #![feature(shared)]
 #![feature(unique)]
+#![feature(i128_type)]
+#![feature(i128)]
 
 extern crate alloc;
 extern crate core;

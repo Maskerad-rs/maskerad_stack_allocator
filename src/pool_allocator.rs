@@ -11,11 +11,11 @@ use std::mem;
 use std::ptr;
 use utils;
 use allocation_error::{AllocationResult, AllocationError};
+use std::marker;
 use unique_ptr::UniquePtr;
 
 //TODO: is Vec really needed, isn't RawVec sufficient for our use case ?
 //Vec drops all our PoolItems, which contain a MemoryChunk holding a rawvec
-//TODO: We must assure that all our smart pointers are destroyed before the pool...
 pub struct PoolAllocator {
     storage: Vec<RefCell<PoolItem>>,
     first_available: Cell<Option<usize>>,
@@ -89,7 +89,6 @@ impl PoolAllocator {
                     //Now that we are done, update the type description to indicate that the object is there.
                     *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
-                    //TODO: not a &mut T, a UniquePtr or SharedPtr or something like that.
                     Ok(UniquePtr::from_raw(ptr, &self, index))
                 },
                 None => {
@@ -172,6 +171,10 @@ mod pool_allocator_test {
                 _hp: hp,
             }
         }
+
+        pub fn level(&self) -> u32 {
+            self._hp
+        }
     }
 
     impl Default for Monster {
@@ -184,10 +187,12 @@ mod pool_allocator_test {
 
     impl Drop for Monster {
         fn drop(&mut self) {
-            println!("[PoolAllocator,UniquePtr, SharedPtr] I'm dying !");
+            println!("[PoolAllocator] I'm dying !");
         }
     }
 
+    //TODO: It was working in fact... i want to die.
+    //It's just that, after the panic, the other UniquePtr<Monster> was fucking dropped.
     #[test]
     fn test_unique_ptr_drop_and_nb_pool_available() {
         //create a pool allocator with 2 pool items of 100 bytes.
@@ -200,11 +205,7 @@ mod pool_allocator_test {
         let a_monster = pool.alloc_unique(|| {
             Monster::new(3)
         }).unwrap();
-        panic!();
-        //The monster, internally, is dropped, when passed to UniquePtr::from_raw, which call from_unique,
-        //which call Unique::new_unchecked(raw_ptr).
-        //TODO: I think we need Intermediate places... Place (InterUniquePtr), InPlace (InterUniquePtr), Placer (Pool), BoxPlace(InterUniquePtr), Boxed(UniquePtr).
-
+        assert_eq!(a_monster.level(), 3);
         //The index of the first available pool item is 1.
         assert_eq!(pool.first_available.get(), Some(1));
 
@@ -216,7 +217,7 @@ mod pool_allocator_test {
 
             //The index of the first available item is None. There's no pool items available.
             assert_eq!(pool.first_available.get(), None);
-
+            assert_eq!(another_monster.level(), 1);
             //Since no pool items are available, we'll get an error if we try to allocate something.
             /*
             assert!(pool.alloc_unique(|| {

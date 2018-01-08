@@ -9,33 +9,38 @@ use std::ptr::Unique;
 use pool_allocator::PoolAllocator;
 use std::marker;
 use std::mem;
+use std::any::Any;
+use std::hash::{Hasher, Hash};
+use std::cmp::Ordering;
+use std::ops::{DerefMut, Deref};
+use std::borrow;
+use std::fmt;
 
-// We don't use Placer, Placer, InPlace, BoxPlacer or Boxed. Those API are just too shaky for the moment,
-// (And it's pretty hard to make sense of it).
 
 //TODO: ?Sized ? tester dans les unit tests avec un trait object.
 /// A pointer type for allocation in memory pools.
 ///
 /// `UniquePtr<T>` is basically a `Box<T>`. It provides unique ownership to a value from a pool,
 /// and drop this value when it goes out of scope.
-pub struct UniquePtr<'a, T> {
+pub struct UniquePtr<'a, T: ?Sized> {
     ptr: Unique<T>,
     pool: &'a PoolAllocator,
     chunk_index: usize,
 }
 
-impl<'a, T> UniquePtr<'a, T> {
+impl<'a, T: ?Sized> UniquePtr<'a, T> {
     pub unsafe fn from_raw(raw: *mut T, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
         UniquePtr::from_unique(Unique::new_unchecked(raw), pool, chunk_index)
     }
 
-    pub unsafe fn from_unique(unique_ptr: Unique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
+    pub unsafe fn from_unique(ptr: Unique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
         UniquePtr {
-            ptr: unique_ptr,
+            ptr,
             pool,
             chunk_index,
         }
     }
+
 
     pub fn into_raw(ptr: UniquePtr<T>) -> *mut T {
         UniquePtr::into_unique(ptr).as_ptr()
@@ -46,10 +51,13 @@ impl<'a, T> UniquePtr<'a, T> {
         mem::forget(ptr);
         unique
     }
+
 }
 
-impl<'a, T> Drop for UniquePtr<'a, T> {
+
+impl<'a, T: ?Sized> Drop for UniquePtr<'a, T> {
     fn drop(&mut self) {
+
         //Get the current index of the first available pool item in the pool allocator.
         let current_first_available = self.pool.first_available();
 
@@ -67,5 +75,178 @@ impl<'a, T> Drop for UniquePtr<'a, T> {
         unsafe {
             pool_item.memory_chunk().destroy();
         }
+
+    }
+}
+
+//TODO: hm....
+impl<'a, T: Clone> Clone for UniquePtr<'a, T> {
+    fn clone(&self) -> UniquePtr<'a, T> {
+        self.pool.alloc_unique(|| {
+            (**self).clone()
+        }).unwrap()
+    }
+
+    fn clone_from(&mut self, source: &UniquePtr<T>) {
+        (**self).clone_from(&(**source));
+    }
+}
+
+impl<'a, T: ?Sized + PartialEq> PartialEq for UniquePtr<'a, T> {
+    #[inline]
+    fn eq(&self, other: &UniquePtr<T>) -> bool {
+        PartialEq::eq(&**self, &**other)
+    }
+    #[inline]
+    fn ne(&self, other: &UniquePtr<T>) -> bool {
+        PartialEq::ne(&**self, &**other)
+    }
+}
+
+impl<'a, T: ?Sized + PartialOrd> PartialOrd for UniquePtr<'a, T> {
+    #[inline]
+    fn partial_cmp(&self, other: &UniquePtr<T>) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&**self, &**other)
+    }
+    #[inline]
+    fn lt(&self, other: &UniquePtr<T>) -> bool {
+        PartialOrd::lt(&**self, &**other)
+    }
+    #[inline]
+    fn le(&self, other: &UniquePtr<T>) -> bool {
+        PartialOrd::le(&**self, &**other)
+    }
+    #[inline]
+    fn ge(&self, other: &UniquePtr<T>) -> bool {
+        PartialOrd::ge(&**self, &**other)
+    }
+    #[inline]
+    fn gt(&self, other: &UniquePtr<T>) -> bool {
+        PartialOrd::gt(&**self, &**other)
+    }
+}
+
+impl<'a, T: ?Sized + Ord> Ord for UniquePtr<'a, T> {
+    #[inline]
+    fn cmp(&self, other: &UniquePtr<T>) -> Ordering {
+        Ord::cmp(&**self, &**other)
+    }
+}
+
+impl<'a, T: ?Sized + Eq> Eq for UniquePtr<'a, T> {}
+
+
+impl<'a, T: ?Sized + Hash> Hash for UniquePtr<'a, T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (**self).hash(state);
+    }
+}
+
+impl<'a, T: ?Sized + Hasher> Hasher for UniquePtr<'a, T> {
+    fn finish(&self) -> u64 {
+        (**self).finish()
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        (**self).write(bytes)
+    }
+    fn write_u8(&mut self, i: u8) {
+        (**self).write_u8(i)
+    }
+    fn write_u16(&mut self, i: u16) {
+        (**self).write_u16(i)
+    }
+    fn write_u32(&mut self, i: u32) {
+        (**self).write_u32(i)
+    }
+    fn write_u64(&mut self, i: u64) {
+        (**self).write_u64(i)
+    }
+    fn write_u128(&mut self, i: u128) {
+        (**self).write_u128(i)
+    }
+    fn write_usize(&mut self, i: usize) {
+        (**self).write_usize(i)
+    }
+    fn write_i8(&mut self, i: i8) {
+        (**self).write_i8(i)
+    }
+    fn write_i16(&mut self, i: i16) {
+        (**self).write_i16(i)
+    }
+    fn write_i32(&mut self, i: i32) {
+        (**self).write_i32(i)
+    }
+    fn write_i64(&mut self, i: i64) {
+        (**self).write_i64(i)
+    }
+    fn write_i128(&mut self, i: i128) {
+        (**self).write_i128(i)
+    }
+    fn write_isize(&mut self, i: isize) {
+        (**self).write_isize(i)
+    }
+}
+
+impl<'a, T: fmt::Display + ?Sized> fmt::Display for UniquePtr<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&**self, f)
+    }
+}
+
+impl<'a, T: fmt::Debug + ?Sized> fmt::Debug for UniquePtr<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+impl<'a, T: ?Sized> fmt::Pointer for UniquePtr<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // It's not possible to extract the inner Unique directly from the UniquePtr,
+        // instead we cast it to a *const which aliases the Unique
+        let ptr: *const T = &**self;
+        fmt::Pointer::fmt(&ptr, f)
+    }
+}
+
+impl<'a, T: ?Sized> Deref for UniquePtr<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        unsafe {
+            self.ptr.as_ref()
+        }
+    }
+}
+
+
+impl<'a, T: ?Sized> DerefMut for UniquePtr<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe {
+            self.ptr.as_mut()
+        }
+    }
+}
+
+impl<'a, T: ?Sized> borrow::Borrow<T> for UniquePtr<'a, T> {
+    fn borrow(&self) -> &T {
+        &**self
+    }
+}
+
+impl<'a, T: ?Sized> borrow::BorrowMut<T> for UniquePtr<'a, T> {
+    fn borrow_mut(&mut self) -> &mut T {
+        &mut **self
+    }
+}
+
+impl<'a, T: ?Sized> AsRef<T> for UniquePtr<'a, T> {
+    fn as_ref(&self) -> &T {
+        &**self
+    }
+}
+
+impl<'a, T: ?Sized> AsMut<T> for UniquePtr<'a, T> {
+    fn as_mut(&mut self) -> &mut T {
+        &mut **self
     }
 }
