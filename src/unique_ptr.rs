@@ -40,17 +40,6 @@ impl<'a, T: ?Sized> UniquePtr<'a, T> {
             chunk_index,
         }
     }
-
-
-    pub fn into_raw(ptr: UniquePtr<T>) -> *mut T {
-        UniquePtr::into_unique(ptr).as_ptr()
-    }
-
-    pub fn into_unique(ptr: UniquePtr<T>) -> Unique<T> {
-        let unique = ptr.ptr;
-        mem::forget(ptr);
-        unique
-    }
 }
 
 

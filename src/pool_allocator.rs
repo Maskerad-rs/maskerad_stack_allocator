@@ -21,6 +21,19 @@ pub struct SharedUnique<T: ?Sized> {
     value: T,
 }
 
+/*
+TODO: not sure if necessary, but with the 'drop glue'... probably safer to implement the drop trait
+on this intermediate structure.
+*/
+/*
+impl<T: ?Sized> Drop for SharedUnique<T> {
+    //We don't need to drop strong and weak, usize are Copy.
+    fn drop(&mut self) {
+        mem::drop(self.value)
+    }
+}
+*/
+
 //TODO: is Vec really needed, isn't RawVec sufficient for our use case ?
 //Vec drops all our PoolItems, which contain a MemoryChunk holding a rawvec
 pub struct PoolAllocator {
@@ -59,19 +72,19 @@ impl PoolAllocator {
     }
 
     pub fn alloc_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
-        where F: FnOnce() -> T
+        where F: FnOnce() -> SharedUnique<T>
     {
         self.alloc_non_copy_shared(op)
     }
 
     pub fn alloc_non_copy_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
-        where F: FnOnce() -> T
+        where F: FnOnce() -> SharedUnique<T>
     {
         unsafe {
 
 
             //Get the type description of the type T (get its vtable).
-            let type_description = utils::get_type_description::<T>();
+            let type_description = utils::get_type_description::<SharedUnique<T>>();
 
             //Get the index of the current first available pool item in the pool allocator.
             //alloc_non_copy_inner will update the index of the first available pool item,
@@ -80,11 +93,11 @@ impl PoolAllocator {
                 Some(index) => {
                     //Ask the the first available memory chunk to give us raw pointers to memory locations
                     //for our type description object.
-                    let (type_description_ptr, ptr) = self.alloc_non_copy_inner(index, mem::size_of::<T>(), mem::align_of::<T>())?;
+                    let (type_description_ptr, ptr) = self.alloc_non_copy_inner(index, mem::size_of::<SharedUnique<T>>(), mem::align_of::<SharedUnique<T>>())?;
 
                     //Cast them.
                     let type_description_ptr = type_description_ptr as *mut usize;
-                    let ptr = ptr as *mut T;
+                    let ptr = ptr as *mut SharedUnique<T>;
 
                     //Write in our type description along with a bit indicating that the object has *not*
                     //been initialized yet.
@@ -96,8 +109,7 @@ impl PoolAllocator {
                     //Now that we are done, update the type description to indicate that the object is there.
                     *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
-                    Ok(UniquePtr::from_raw(ptr, &self, index))
-                    let shared = Shared
+                    Ok(SharedPtr::from_raw(ptr, &self, index))
 
                 },
                 None => {
