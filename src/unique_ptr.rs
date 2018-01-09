@@ -51,7 +51,6 @@ impl<'a, T: ?Sized> UniquePtr<'a, T> {
         mem::forget(ptr);
         unique
     }
-
 }
 
 

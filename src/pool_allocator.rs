@@ -13,6 +13,13 @@ use utils;
 use allocation_error::{AllocationResult, AllocationError};
 use std::marker;
 use unique_ptr::UniquePtr;
+use shared_ptr::SharedPtr;
+
+pub struct SharedUnique<T: ?Sized> {
+    strong: Cell<usize>,
+    weak: Cell<usize>,
+    value: T,
+}
 
 //TODO: is Vec really needed, isn't RawVec sufficient for our use case ?
 //Vec drops all our PoolItems, which contain a MemoryChunk holding a rawvec
@@ -49,6 +56,55 @@ impl PoolAllocator {
     /// Sets the index of the first available pool item in the pool allocator.
     pub fn set_first_available(&self, first_available: Option<usize>) {
         self.first_available.set(first_available);
+    }
+
+    pub fn alloc_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
+        where F: FnOnce() -> T
+    {
+        self.alloc_non_copy_shared(op)
+    }
+
+    pub fn alloc_non_copy_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+
+
+            //Get the type description of the type T (get its vtable).
+            let type_description = utils::get_type_description::<T>();
+
+            //Get the index of the current first available pool item in the pool allocator.
+            //alloc_non_copy_inner will update the index of the first available pool item,
+            //and we need this index to create an UniquePtr.
+            match self.first_available() {
+                Some(index) => {
+                    //Ask the the first available memory chunk to give us raw pointers to memory locations
+                    //for our type description object.
+                    let (type_description_ptr, ptr) = self.alloc_non_copy_inner(index, mem::size_of::<T>(), mem::align_of::<T>())?;
+
+                    //Cast them.
+                    let type_description_ptr = type_description_ptr as *mut usize;
+                    let ptr = ptr as *mut T;
+
+                    //Write in our type description along with a bit indicating that the object has *not*
+                    //been initialized yet.
+                    *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
+
+                    //Initialize the object.
+                    ptr::write(&mut (*ptr), op());
+
+                    //Now that we are done, update the type description to indicate that the object is there.
+                    *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
+
+                    Ok(UniquePtr::from_raw(ptr, &self, index))
+                    let shared = Shared
+
+                },
+                None => {
+                    return Err(AllocationError::OutOfPoolError(format!("All the pools in the pool allocator were in use when the allocation was requested !")));
+                }
+            }
+        }
     }
 
     #[inline]
@@ -90,6 +146,7 @@ impl PoolAllocator {
                     *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
                     Ok(UniquePtr::from_raw(ptr, &self, index))
+
                 },
                 None => {
                     return Err(AllocationError::OutOfPoolError(format!("All the pools in the pool allocator were in use when the allocation was requested !")));
@@ -251,4 +308,9 @@ mod pool_allocator_test {
 
     }
     */
+
+    #[test]
+    fn test_uniqueptr_clone() {
+        unimplemented!()
+    }
 }

@@ -37,6 +37,7 @@
 #![feature(unique)]
 #![feature(i128_type)]
 #![feature(i128)]
+#![feature(optin_builtin_traits)]
 
 extern crate alloc;
 extern crate core;
@@ -53,6 +54,7 @@ mod pool_item;
 mod allocation_error;
 mod pool_allocator;
 mod unique_ptr;
+mod shared_ptr;
 
 pub mod utils;
 
