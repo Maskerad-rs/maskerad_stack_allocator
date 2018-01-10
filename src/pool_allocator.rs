@@ -13,24 +13,7 @@ use utils;
 use allocation_error::{AllocationResult, AllocationError};
 use unique_ptr::UniquePtr;
 use shared_ptr::{SharedUnique, SharedPtr, WeakPtr};
-
-
-
-/*
-TODO: not sure if necessary, but with the 'drop glue'... probably safer to implement the drop trait
-on this intermediate structure.
-*/
-/*
-impl<T: ?Sized> Drop for SharedUnique<T> {
-    //We don't need to drop strong and weak, usize are Copy.
-    fn drop(&mut self) {
-        mem::drop(self.value)
-    }
-}
-*/
-
-//TODO: is Vec really needed, isn't RawVec sufficient for our use case ?
-//Vec drops all our PoolItems, which contain a MemoryChunk holding a rawvec
+use std::sync::Arc;
 
 pub struct PoolAllocator {
     storage: Vec<RefCell<PoolItem>>,
@@ -116,18 +99,12 @@ impl PoolAllocator {
     }
 
     #[inline]
-    pub fn alloc_unique<T, F>(&self, op: F) -> AllocationResult<UniquePtr<T>>
+    pub fn alloc_unique<F, T>(&self, op: F) -> AllocationResult<UniquePtr<T>>
         where F: FnOnce() -> T
     {
         self.alloc_non_copy_unique(op)
     }
-/*
-    pub fn wrapped_by_shared<>()
 
-    pub fn wrapped_by_unique<>()
-
-    pub fn wrapped_by<>()
- */
     #[inline]
     fn alloc_non_copy_unique<T, F>(&self, op: F) -> AllocationResult<UniquePtr<T>>
         where F: FnOnce() -> T
@@ -429,7 +406,7 @@ mod pool_allocator_test {
         assert_eq!(pool.first_available.get(), Some(1));
     }
 
-    //8
+    //8, 9
     #[test]
     fn test_trait_object_with_smart_ptr() {
         pub trait TestTraitObject {
@@ -467,7 +444,11 @@ mod pool_allocator_test {
         }
 
         pub struct StructTest<'a> {
-            test: Vec<UniquePtr<'a, TestTraitObject>>,
+            test: UniquePtr<'a, TestTraitObject>,
+        }
+
+        pub struct StructTestShared<'a> {
+            test: SharedPtr<'a, TestTraitObject>,
         }
 
 
@@ -476,19 +457,20 @@ mod pool_allocator_test {
         //the index of the first available pool item is 0.
         assert_eq!(pool.first_available.get(), Some(0));
 
-        let mut struct_test = StructTest {
-            test: Vec::new()
+        let struct_test = StructTest {
+            test: pool.alloc_unique(|| { Monster::new(8) }).unwrap() as UniquePtr<TestTraitObject>,
         };
 
-        struct_test.test.push(pool.alloc_unique(|| { Monster::new(8) }).map(|obj| {
-
-        }) as UniquePtr<TestTraitObject>);
-
+        let struct_test_shared = StructTestShared {
+            test: pool.alloc_shared(|| {
+                Dragon::new(9)
+            }).unwrap() as SharedPtr<TestTraitObject>,
+        };
 
         assert_eq!(pool.first_available.get(), None);
 
-        assert!(struct_test.test.get(0).unwrap().test().is_some());
-        assert!(struct_test.test.get(1).unwrap().test().is_none());
+        assert!(struct_test.test.test().is_some());
+        assert!(struct_test_shared.test.test().is_none());
     }
 
 }

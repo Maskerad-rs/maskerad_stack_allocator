@@ -38,6 +38,8 @@
 #![feature(i128_type)]
 #![feature(i128)]
 #![feature(optin_builtin_traits)]
+#![feature(coerce_unsized)]
+#![feature(unsize)]
 
 extern crate alloc;
 extern crate core;

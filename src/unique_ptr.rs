@@ -9,10 +9,11 @@ use std::ptr::Unique;
 use pool_allocator::PoolAllocator;
 use std::hash::{Hasher, Hash};
 use std::cmp::Ordering;
-use std::ops::{DerefMut, Deref};
+use std::ops::{DerefMut, Deref, CoerceUnsized};
 use std::borrow;
 use std::fmt;
-
+use allocation_error::AllocationResult;
+use std::marker::Unsize;
 
 //TODO: ?Sized ? tester dans les unit tests avec un trait object.
 /// A pointer type for allocation in memory pools.
@@ -37,6 +38,7 @@ impl<'a, T: ?Sized> UniquePtr<'a, T> {
             chunk_index,
         }
     }
+
 }
 
 
@@ -238,3 +240,5 @@ impl<'a, T: ?Sized> AsMut<T> for UniquePtr<'a, T> {
         &mut **self
     }
 }
+
+impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<UniquePtr<'a, U>> for UniquePtr<'a, T> {}

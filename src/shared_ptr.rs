@@ -200,6 +200,8 @@ impl<'a, T: ?Sized> fmt::Pointer for SharedPtr<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<SharedPtr<'a, U>> for SharedPtr<'a, T> {}
+
 
 
 pub struct WeakPtr<'a, T: ?Sized> {
@@ -295,4 +297,4 @@ impl<'a, T: ?Sized> SharedUniquePtr<T> for WeakPtr<'a, T> {
     }
 }
 
-
+impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<WeakPtr<'a, U>> for WeakPtr<'a, T> {}
