@@ -7,9 +7,6 @@
 
 use std::ptr::Unique;
 use pool_allocator::PoolAllocator;
-use std::marker;
-use std::mem;
-use std::any::Any;
 use std::hash::{Hasher, Hash};
 use std::cmp::Ordering;
 use std::ops::{DerefMut, Deref};
@@ -59,9 +56,12 @@ impl<'a, T: ?Sized> Drop for UniquePtr<'a, T> {
         //This pool item becomes the first available pool item in the pool allocator.
         self.pool.set_first_available(Some(self.chunk_index));
 
-        //drop the data inside the pool item's memory chunk.
+
         unsafe {
+            //drop the data inside the pool item's memory chunk.
             pool_item.memory_chunk().destroy();
+            //Set the index of the first unused byte in the memory chunk to 0.
+            pool_item.memory_chunk().set_fill(0);
         }
 
     }
