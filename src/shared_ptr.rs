@@ -17,16 +17,19 @@ use unique_ptr::UniquePtr;
 
 use pool_allocator::PoolAllocator;
 
+/// A wrapper around a `T`, which add the necessary fields for reference-counting logic.
 pub struct SharedUnique<T: ?Sized> {
     pub strong: Cell<usize>,
     pub weak: Cell<usize>,
     pub value: T,
-
 }
 
 
 
-
+/// A single-threaded reference-counting pointer. It is basically an `Rc<T>`.
+///
+/// Since the pool is not global, the smart pointer have to keep a reference to the pool and, to be able
+/// to tell which chunk of memory to drop, it have to keep the index of the chunk used to allocate `T`.
 pub struct SharedPtr<'a, T: ?Sized> {
     ptr: Shared<SharedUnique<T>>,
     pool: &'a PoolAllocator,
@@ -39,6 +42,11 @@ impl<'a, T: ?Sized> !marker::Send for SharedPtr<'a, T> {}
 impl<'a, T: ?Sized> !marker::Sync for SharedPtr<'a, T> {}
 
 impl<'a, T: ?Sized> SharedPtr<'a, T> {
+
+    /// Constructs an `Rc` from a raw pointer coming from the pool.
+    ///
+    /// This function is unsafe because improper use may lead to memory problems. For example, a
+    /// double-free may occur if the function is called twice on the same raw pointer.
     pub unsafe fn from_raw(ptr: *mut SharedUnique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
         SharedPtr {
             ptr: Shared::new_unchecked(ptr),
@@ -47,7 +55,7 @@ impl<'a, T: ?Sized> SharedPtr<'a, T> {
             phantom: marker::PhantomData,
         }
     }
-
+    /// Creates a new `WeakPtr` pointer to this value.
     pub fn downgrade(this: &Self) -> WeakPtr<T> {
         this.inc_weak();
         WeakPtr {
@@ -57,18 +65,26 @@ impl<'a, T: ?Sized> SharedPtr<'a, T> {
         }
     }
 
+    /// Gets the number of `WeakPtr` pointers to this value.
     pub fn weak_count(this: &Self) -> usize {
         this.weak() - 1
     }
-
+    /// Gets the number of `SharedPtr` pointers to this value.
     pub fn strong_count(this: &Self) -> usize {
         this.strong()
     }
 
+    /// Returns true if there are no other `SharedPtr` or `WeakPtr` pointers to
+    /// this inner value.
     fn is_unique(this: &Self) -> bool {
         SharedPtr::weak_count(this) == 0 && SharedPtr::strong_count(this) == 1
     }
 
+    /// Returns a mutable reference to the inner value, if there are
+    /// no other `SharedPtr` or `WeakPtr` pointers to the same value.
+    ///
+    /// Returns `None` otherwise, because it is not safe to
+    /// mutate a shared value.
     pub fn get_mut(this: &mut Self) -> Option<&mut T> {
         if SharedPtr::is_unique(this) {
             unsafe {
@@ -79,6 +95,8 @@ impl<'a, T: ?Sized> SharedPtr<'a, T> {
         }
     }
 
+    /// Returns true if the two `SharedPtr`s point to the same value (not
+    /// just values that compare as equal).
     pub fn ptr_eq(this: &Self, other: &Self) -> bool {
         this.ptr.as_ptr() == other.ptr.as_ptr()
     }
@@ -95,8 +113,16 @@ impl<'a, T: ?Sized> ops::Deref for SharedPtr<'a, T> {
 
 //TODO: use needs_drop, to know if we should use destroy to drop the SharedPtr.
 impl<'a, T: ?Sized> Drop for SharedPtr<'a, T> {
-    fn drop(&mut self) {
 
+    /// Drops the `SharedPtr`.
+    ///
+    /// This will decrement the strong reference count. If the strong reference
+    /// count reaches zero then the only other references (if any) are
+    /// `WeakPtr`, so we `drop` the inner value by asking the pool to drop the content of the
+    /// memory chunk used by the pool allocator to allocate the object.
+    /// This chunk become the first available chunk for the pool allocator, it means that the pool will use this chunk
+    /// when the next allocation occurs.
+    fn drop(&mut self) {
         self.dec_strong();
         if self.strong() == 0 {
             //Get the current index of the first available pool item in the pool allocator.
@@ -124,6 +150,11 @@ impl<'a, T: ?Sized> Drop for SharedPtr<'a, T> {
 }
 
 impl<'a, T: ?Sized> Clone for SharedPtr<'a, T> {
+
+    /// Makes a clone of the `SharedPtr` pointer.
+    ///
+    /// This creates another pointer to the same inner value, increasing the
+    /// strong reference count.
     fn clone(&self) -> SharedPtr<'a, T> {
         self.inc_strong();
         //Shared is Copy.
@@ -203,7 +234,28 @@ impl<'a, T: ?Sized> fmt::Pointer for SharedPtr<'a, T> {
 impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<SharedPtr<'a, U>> for SharedPtr<'a, T> {}
 
 
-
+/// `WeakPtr` is a version of `SharedPtr` that holds a non-owning reference to the
+/// managed value.
+///
+/// The value is accessed by calling `upgrade` on the `WeakPtr`
+/// pointer, which returns an `Option<SharedPtr<T>>`.
+///
+/// Since a `WeakPtr` reference does not count towards ownership, it will not
+/// prevent the inner value from being dropped, and `WeakPtr` itself makes no
+/// guarantees about the value still being present and may return `None` when
+/// calling `upgrade`.
+///
+/// A `WeakPtr` pointer is useful for keeping a temporary reference to the value
+/// within `SharedPtr` without extending its lifetime. It is also used to prevent
+/// circular references between `SharedPtr` pointers, since mutual owning references
+/// would never allow either `SharedPtr` to be dropped. For example, a tree could
+/// have strong `SharedPtr` pointers from parent nodes to children, and `WeakPtr`
+/// pointers from children back to their parents.
+///
+/// The typical way to obtain a `WeakPtr` pointer is to call `SharedPtr::downgrade`.
+///
+/// Since the pool is not global, the smart pointer have to keep a reference to the pool and, to be able
+/// to tell which chunk of memory to drop, it have to keep the index of the chunk used to allocate `T`.
 pub struct WeakPtr<'a, T: ?Sized> {
     ptr: Shared<SharedUnique<T>>,
     pool: &'a PoolAllocator,
@@ -215,6 +267,10 @@ impl<'a, T: ?Sized> !marker::Send for WeakPtr<'a, T> {}
 impl<'a, T:?Sized> !marker::Sync for WeakPtr<'a, T> {}
 
 impl<'a, T: ?Sized> WeakPtr<'a, T> {
+    /// Attempts to upgrade the `WeakPtr` pointer to a `SharedPtr`, extending
+    /// the lifetime of the value if successful.
+    ///
+    /// Returns `None` if the value has since been dropped.
     pub fn upgrade(&self) -> Option<SharedPtr<T>> {
         if self.strong() == 0 {
             None
@@ -230,13 +286,16 @@ impl<'a, T: ?Sized> WeakPtr<'a, T> {
     }
 }
 
+
 impl<'a, T: ?Sized> Drop for WeakPtr<'a, T> {
+    /// Drops the `WeakPtr` pointer.
     fn drop(&mut self) {
         self.dec_weak();
     }
 }
 
 impl<'a, T: ?Sized> Clone for WeakPtr<'a, T> {
+    /// Makes a clone of the `WeakPtr` pointer that points to the same value.
     fn clone(&self) -> WeakPtr<'a, T> {
         self.inc_weak();
         WeakPtr {

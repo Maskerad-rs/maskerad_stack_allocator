@@ -125,8 +125,8 @@ impl StackAllocator {
 
     /// Allocates data in the allocator's memory.
     ///
-    /// # Panics
-    /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
+    /// # Error
+    /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
     /// ```

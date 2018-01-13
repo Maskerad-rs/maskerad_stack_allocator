@@ -21,9 +21,13 @@
 //! - a **double-buffered** allocator for data implementing the **Copy** trait,
 //!
 //!
-//! Its primary purpose is to prevent memory fragmentation.
+//! - a **pool** allocator for data implementing the **Copy** trait,
 //!
-//! This is a nightly-only library.
+//! - a **pool** allocator for data implementing the **Drop** trait,
+//!
+//! All those allocators are for single-threaded scenarios, and their primary purpose is to prevent memory fragmentation.
+//!
+//! This is a **nightly-only** library.
 
 
 
@@ -53,11 +57,12 @@ mod double_buffered_allocator_copy;
 mod double_ended_allocator_copy;
 mod pool_allocator_copy;
 mod pool_item;
-mod allocation_error;
+
 mod pool_allocator;
 mod unique_ptr;
 mod shared_ptr;
 
+pub mod allocation_error;
 pub mod utils;
 
 pub use stack_allocator::StackAllocator;
@@ -71,3 +76,9 @@ pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
 
 pub use double_ended_allocator::DoubleEndedStackAllocator;
 pub use double_ended_allocator_copy::DoubleEndedStackAllocatorCopy;
+
+pub use pool_allocator::PoolAllocator;
+pub use unique_ptr::UniquePtr;
+pub use shared_ptr::{SharedPtr, WeakPtr};
+pub use pool_item::PoolItem;
+

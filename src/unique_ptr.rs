@@ -20,17 +20,39 @@ use std::marker::Unsize;
 ///
 /// `UniquePtr<T>` is basically a `Box<T>`. It provides unique ownership to a value from a pool,
 /// and drop this value when it goes out of scope.
+///
+/// Since the pool is not global, the smart pointer have to keep a reference to the pool and, to be able
+/// to tell which chunk of memory to drop, it have to keep the index of the chunk used to allocate `T`.
 pub struct UniquePtr<'a, T: ?Sized> {
     ptr: Unique<T>,
-    pool: &'a PoolAllocator,
+    pool_index: u8,
     chunk_index: usize,
 }
 
 impl<'a, T: ?Sized> UniquePtr<'a, T> {
+    /// Constructs a unique Pointer from a raw pointer.
+    ///
+    /// After calling this function, the raw pointer is owned by the
+    /// resulting `UniquePtr`. Specifically, the `UniquePtr` destructor will call
+    /// the pool to drop the object.
+    ///
+    /// This function is unsafe because improper use may lead to
+    /// memory problems. For example, a double-free may occur if the
+    /// function is called twice on the same raw pointer.
     pub unsafe fn from_raw(raw: *mut T, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
         UniquePtr::from_unique(Unique::new_unchecked(raw), pool, chunk_index)
     }
 
+    /// Constructs a `UniquePtr` from a `Unique<T>` pointer.
+    ///
+    /// After calling this function, the memory is owned by a `UniquePtr` and `T` can
+    /// then be destroyed and released upon drop.
+    ///
+    /// # Safety
+    ///
+    /// A `Unique<T>` can be safely created via `Unique::new` and thus doesn't
+    /// necessarily own the data pointed to nor is the data guaranteed to live
+    /// as long as the pointer.
     pub unsafe fn from_unique(ptr: Unique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
         UniquePtr {
             ptr,
@@ -43,6 +65,9 @@ impl<'a, T: ?Sized> UniquePtr<'a, T> {
 
 
 impl<'a, T: ?Sized> Drop for UniquePtr<'a, T> {
+    /// When the `UniquePtr<T>` is dropped, it tells the pool to drop the content of the memory chunk used to allocate
+    /// `T`. This chunk become the first available chunk for the pool allocator, it means that the pool will use this chunk
+    /// when the next allocation occurs.
     fn drop(&mut self) {
 
         //Get the current index of the first available pool item in the pool allocator.
@@ -69,14 +94,15 @@ impl<'a, T: ?Sized> Drop for UniquePtr<'a, T> {
     }
 }
 
-//TODO: hm....
+
 impl<'a, T: Clone> Clone for UniquePtr<'a, T> {
+    /// Returns a new unique pointer with a `clone()` of this UniquePtr's contents.
     fn clone(&self) -> UniquePtr<'a, T> {
         self.pool.alloc_unique(|| {
             (**self).clone()
         }).unwrap()
     }
-
+    /// Copies `source`'s contents into `self` without creating a new allocation.
     fn clone_from(&mut self, source: &UniquePtr<T>) {
         (**self).clone_from(&(**source));
     }
