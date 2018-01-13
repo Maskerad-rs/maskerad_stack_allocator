@@ -45,6 +45,9 @@
 #![feature(coerce_unsized)]
 #![feature(unsize)]
 
+#[macro_use]
+extern crate lazy_static;
+
 extern crate alloc;
 extern crate core;
 
@@ -57,6 +60,7 @@ mod double_buffered_allocator_copy;
 mod double_ended_allocator_copy;
 mod pool_allocator_copy;
 mod pool_item;
+mod allocator_hub;
 
 mod pool_allocator;
 mod unique_ptr;

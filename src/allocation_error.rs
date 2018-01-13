@@ -8,7 +8,9 @@
 use std::fmt;
 use std::error::Error;
 
+
 /// A custom error enumeration, used by AllocationResult as the error type.
+/// Handle "out of memory" and "out of pool" errors.
 #[derive(Debug)]
 pub enum AllocationError {
     OutOfMemoryError(String),
@@ -40,5 +42,4 @@ impl Error for AllocationError {
     }
 }
 
-/// A simple typedef, for convenience.
 pub type AllocationResult<T> = Result<T, AllocationError>;

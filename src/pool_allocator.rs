@@ -13,11 +13,11 @@ use utils;
 use allocation_error::{AllocationResult, AllocationError};
 use unique_ptr::UniquePtr;
 use shared_ptr::{SharedUnique, SharedPtr, WeakPtr};
-use std::sync::Arc;
+use std::sync::{Mutex, MutexGuard};
 
 pub struct PoolAllocator {
-    storage: Vec<RefCell<PoolItem>>,
-    first_available: Cell<Option<usize>>,
+    storage: Vec<Mutex<PoolItem>>,
+    first_available: Mutex<Option<usize>>,
     pool_index: u8,
 }
 
@@ -26,31 +26,52 @@ impl PoolAllocator {
     pub fn new(nb_item: usize, size_item: usize, pool_index: u8) -> Self {
         let mut storage = Vec::with_capacity(nb_item);
         for i in 0..nb_item - 1 {
-            storage.push(RefCell::new(PoolItem::new(size_item, Some(i+1))));
+            storage.push(Mutex::new(PoolItem::new(size_item, Some(i+1))));
         }
 
-        storage.push(RefCell::new(PoolItem::new(size_item, None)));
+        storage.push(Mutex::new(PoolItem::new(size_item, None)));
 
         PoolAllocator {
             storage,
-            first_available: Cell::new(Some(0)),
+            first_available: Mutex::new(Some(0)),
             pool_index,
         }
     }
 
     /// Returns an immutable reference to the vector of memory chunks used by the allocator.
-    pub fn storage(&self) -> &Vec<RefCell<PoolItem>> {
+    pub fn storage(&self) -> &Vec<Mutex<PoolItem>> {
         &self.storage
     }
 
     /// Returns the index of the first available pool item in the pool allocator.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if all the memory chunks of the pool are used.
     pub fn first_available(&self) -> Option<usize> {
-        self.first_available.get()
+        match self.first_available.lock() {
+            Ok(mutex_guard) => {
+                match *mutex_guard {
+                    Some(index) => Some(index),
+                    None => None,
+                }
+            },
+            Err(poisoned) => {
+                panic!("The lock on the index of the first available memory chunk in the pool could not be acquired: {:?}", poisoned);
+            }
+        }
     }
 
     /// Sets the index of the first available pool item in the pool allocator.
     pub fn set_first_available(&self, first_available: Option<usize>) {
-        self.first_available.set(first_available);
+        match self.first_available.lock() {
+            Ok(mutex_guard) => {
+                *mutex_guard = first_available;
+            },
+            Err(poisoned) => {
+                panic!("The lock on the index of the first available memory chunk in the pool could not be acquired: {:?}", poisoned);
+            }
+        }
     }
 
     /// Allocates data in one of the pool allocator's memory chunk and returns a `SharedPtr` if successful.
@@ -97,7 +118,7 @@ impl PoolAllocator {
                     //Now that we are done, update the type description to indicate that the object is there.
                     *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
-                    Ok(SharedPtr::from_raw(ptr, &self, index))
+                    Ok(SharedPtr::from_raw(ptr, self.pool_index, index))
 
                 },
                 None => {
@@ -151,7 +172,7 @@ impl PoolAllocator {
                     //Now that we are done, update the type description to indicate that the object is there.
                     *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
-                    Ok(UniquePtr::from_raw(ptr, &self, index))
+                    Ok(UniquePtr::from_raw(ptr, self.pool_index, index))
 
                 },
                 None => {
@@ -165,10 +186,17 @@ impl PoolAllocator {
     fn alloc_non_copy_inner(&self, chunk_index: usize, n_bytes: usize, align: usize) -> AllocationResult<(*const u8, *const u8)> {
 
         //Borrow mutably the first pool item available in the pool allocator.
-        let non_copy_storage = self.storage.get(chunk_index).unwrap().borrow_mut();
+        let non_copy_storage = self.storage.get(chunk_index).unwrap().lock().unwrap();
 
         //This chunk of memory is now in use, update the index of the first available chunk of memory.
-        self.first_available.set(non_copy_storage.next());
+        match self.first_available.lock() {
+            Ok(mutex_guard) => {
+                *mutex_guard = non_copy_storage.next();
+            },
+            Err(poisoned) => {
+                panic!("The lock on the index of the first available memory chunk in the pool could not be acquired: {:?}", poisoned);
+            },
+        }
 
         //Get the index of the first unused memory address.
         let fill = non_copy_storage.memory_chunk().fill();

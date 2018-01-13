@@ -30,27 +30,27 @@ pub struct SharedUnique<T: ?Sized> {
 ///
 /// Since the pool is not global, the smart pointer have to keep a reference to the pool and, to be able
 /// to tell which chunk of memory to drop, it have to keep the index of the chunk used to allocate `T`.
-pub struct SharedPtr<'a, T: ?Sized> {
+pub struct SharedPtr<T: ?Sized> {
     ptr: Shared<SharedUnique<T>>,
-    pool: &'a PoolAllocator,
+    pool_index: u8,
     chunk_index: usize,
     phantom: marker::PhantomData<T>,
 }
 
-impl<'a, T: ?Sized> !marker::Send for SharedPtr<'a, T> {}
+impl<T: ?Sized> !marker::Send for SharedPtr<T> {}
 
-impl<'a, T: ?Sized> !marker::Sync for SharedPtr<'a, T> {}
+impl<T: ?Sized> !marker::Sync for SharedPtr<T> {}
 
-impl<'a, T: ?Sized> SharedPtr<'a, T> {
+impl<T: ?Sized> SharedPtr<T> {
 
     /// Constructs an `Rc` from a raw pointer coming from the pool.
     ///
     /// This function is unsafe because improper use may lead to memory problems. For example, a
     /// double-free may occur if the function is called twice on the same raw pointer.
-    pub unsafe fn from_raw(ptr: *mut SharedUnique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
+    pub unsafe fn from_raw(ptr: *mut SharedUnique<T>, pool_index: u8, chunk_index: usize) -> Self {
         SharedPtr {
             ptr: Shared::new_unchecked(ptr),
-            pool,
+            pool_index,
             chunk_index,
             phantom: marker::PhantomData,
         }
@@ -60,7 +60,7 @@ impl<'a, T: ?Sized> SharedPtr<'a, T> {
         this.inc_weak();
         WeakPtr {
             ptr: this.ptr,
-            pool: this.pool,
+            pool_index: this.pool_index,
             chunk_index: this.chunk_index,
         }
     }
@@ -102,7 +102,7 @@ impl<'a, T: ?Sized> SharedPtr<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> ops::Deref for SharedPtr<'a, T> {
+impl<T: ?Sized> ops::Deref for SharedPtr<T> {
     type Target = T;
 
     #[inline(always)]
@@ -112,7 +112,7 @@ impl<'a, T: ?Sized> ops::Deref for SharedPtr<'a, T> {
 }
 
 //TODO: use needs_drop, to know if we should use destroy to drop the SharedPtr.
-impl<'a, T: ?Sized> Drop for SharedPtr<'a, T> {
+impl<T: ?Sized> Drop for SharedPtr<T> {
 
     /// Drops the `SharedPtr`.
     ///
@@ -149,25 +149,25 @@ impl<'a, T: ?Sized> Drop for SharedPtr<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Clone for SharedPtr<'a, T> {
+impl<T: ?Sized> Clone for SharedPtr<T> {
 
     /// Makes a clone of the `SharedPtr` pointer.
     ///
     /// This creates another pointer to the same inner value, increasing the
     /// strong reference count.
-    fn clone(&self) -> SharedPtr<'a, T> {
+    fn clone(&self) -> SharedPtr<T> {
         self.inc_strong();
         //Shared is Copy.
         SharedPtr {
             ptr: self.ptr,
-            pool: self.pool,
+            pool_index: self.pool_index,
             chunk_index: self.chunk_index,
             phantom: marker::PhantomData,
         }
     }
 }
 
-impl<'a, T: ?Sized + PartialEq> PartialEq for SharedPtr<'a, T> {
+impl<T: ?Sized + PartialEq> PartialEq for SharedPtr<T> {
     fn eq(&self, other: &SharedPtr<T>) -> bool {
         **self == **other
     }
@@ -177,9 +177,9 @@ impl<'a, T: ?Sized + PartialEq> PartialEq for SharedPtr<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized + Eq> Eq for SharedPtr<'a, T> {}
+impl<T: ?Sized + Eq> Eq for SharedPtr<T> {}
 
-impl<'a, T: ?Sized +PartialOrd> PartialOrd for SharedPtr<'a, T> {
+impl<T: ?Sized +PartialOrd> PartialOrd for SharedPtr<T> {
     fn partial_cmp(&self, other: &SharedPtr<T>) -> Option<Ordering> {
         (**self).partial_cmp(&**other)
     }
@@ -201,37 +201,37 @@ impl<'a, T: ?Sized +PartialOrd> PartialOrd for SharedPtr<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized + Ord> Ord for SharedPtr<'a, T> {
+impl<T: ?Sized + Ord> Ord for SharedPtr<T> {
     fn cmp(&self, other: &SharedPtr<T>) -> Ordering {
         (**self).cmp(&**other)
     }
 }
 
-impl<'a, T: ?Sized + Hash> Hash for SharedPtr<'a, T> {
+impl<T: ?Sized + Hash> Hash for SharedPtr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (**self).hash(state);
     }
 }
 
-impl<'a, T: ?Sized + fmt::Display> fmt::Display for SharedPtr<'a, T> {
+impl<T: ?Sized + fmt::Display> fmt::Display for SharedPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }
 }
 
-impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for SharedPtr<'a, T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for SharedPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<'a, T: ?Sized> fmt::Pointer for SharedPtr<'a, T> {
+impl<T: ?Sized> fmt::Pointer for SharedPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Pointer::fmt(&(&**self as *const T), f)
     }
 }
 
-impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<SharedPtr<'a, U>> for SharedPtr<'a, T> {}
+impl<T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<SharedPtr<U>> for SharedPtr<T> {}
 
 
 /// `WeakPtr` is a version of `SharedPtr` that holds a non-owning reference to the
@@ -256,17 +256,17 @@ impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<SharedPtr<
 ///
 /// Since the pool is not global, the smart pointer have to keep a reference to the pool and, to be able
 /// to tell which chunk of memory to drop, it have to keep the index of the chunk used to allocate `T`.
-pub struct WeakPtr<'a, T: ?Sized> {
+pub struct WeakPtr<T: ?Sized> {
     ptr: Shared<SharedUnique<T>>,
-    pool: &'a PoolAllocator,
+    pool_index: u8,
     chunk_index: usize,
 }
 
-impl<'a, T: ?Sized> !marker::Send for WeakPtr<'a, T> {}
+impl<T: ?Sized> !marker::Send for WeakPtr<T> {}
 
-impl<'a, T:?Sized> !marker::Sync for WeakPtr<'a, T> {}
+impl<T:?Sized> !marker::Sync for WeakPtr<T> {}
 
-impl<'a, T: ?Sized> WeakPtr<'a, T> {
+impl<T: ?Sized> WeakPtr<T> {
     /// Attempts to upgrade the `WeakPtr` pointer to a `SharedPtr`, extending
     /// the lifetime of the value if successful.
     ///
@@ -278,7 +278,7 @@ impl<'a, T: ?Sized> WeakPtr<'a, T> {
             self.inc_strong();
             Some(SharedPtr {
                 ptr: self.ptr,
-                pool: self.pool,
+                pool_index: self.pool_index,
                 chunk_index: self.chunk_index,
                 phantom: marker::PhantomData,
             })
@@ -287,26 +287,26 @@ impl<'a, T: ?Sized> WeakPtr<'a, T> {
 }
 
 
-impl<'a, T: ?Sized> Drop for WeakPtr<'a, T> {
+impl<T: ?Sized> Drop for WeakPtr<T> {
     /// Drops the `WeakPtr` pointer.
     fn drop(&mut self) {
         self.dec_weak();
     }
 }
 
-impl<'a, T: ?Sized> Clone for WeakPtr<'a, T> {
+impl<T: ?Sized> Clone for WeakPtr<T> {
     /// Makes a clone of the `WeakPtr` pointer that points to the same value.
-    fn clone(&self) -> WeakPtr<'a, T> {
+    fn clone(&self) -> WeakPtr<T> {
         self.inc_weak();
         WeakPtr {
             ptr: self.ptr,
-            pool: self.pool,
+            pool_index: self.pool_index,
             chunk_index: self.chunk_index,
         }
     }
 }
 
-impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for WeakPtr<'a, T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for WeakPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(Weak)")
     }
@@ -340,7 +340,7 @@ trait SharedUniquePtr<T: ?Sized> {
     }
 }
 
-impl<'a, T: ?Sized> SharedUniquePtr<T> for SharedPtr<'a, T> {
+impl<T: ?Sized> SharedUniquePtr<T> for SharedPtr<T> {
     fn inner(&self) -> &SharedUnique<T> {
         unsafe {
             self.ptr.as_ref()
@@ -348,7 +348,7 @@ impl<'a, T: ?Sized> SharedUniquePtr<T> for SharedPtr<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> SharedUniquePtr<T> for WeakPtr<'a, T> {
+impl<T: ?Sized> SharedUniquePtr<T> for WeakPtr<T> {
     fn inner(&self) -> &SharedUnique<T> {
         unsafe {
             self.ptr.as_ref()
@@ -356,4 +356,4 @@ impl<'a, T: ?Sized> SharedUniquePtr<T> for WeakPtr<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<WeakPtr<'a, U>> for WeakPtr<'a, T> {}
+impl<T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<WeakPtr<U>> for WeakPtr<T> {}
