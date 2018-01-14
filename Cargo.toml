@@ -1,6 +1,6 @@
 [package]
 name = "maskerad_memory_allocators"
-version = "3.0.0"
+version = "3.0.1"
 authors = ["Maskerad developers <maskerad-rs.organization@protonmail.com>"]
 description = "custom allocators, for memory fragmentation prevention."
 license = "MIT/Apache-2.0"
@@ -15,7 +15,7 @@ appveyor = { repository = "Malkaviel/maskerad-stack-allocator", branch = "master
 travis-ci = { repository = "Maskerad-rs/maskerad_stack_allocator", branch = "master" }
 is-it-maintained-issue-resolution = { repository = "Maskerad-rs/maskerad_stack_allocator" }
 is-it-maintained-open-issues = { repository = "Maskerad-rs/maskerad_stack_allocator" }
-maintenance = { status = "passively-developed" }
+maintenance = { status = "passively-maintained" }
 
 [dependencies]
 
