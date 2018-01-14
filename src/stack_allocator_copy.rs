@@ -136,7 +136,7 @@ impl StackAllocatorCopy {
 
         //We don't grow the capacity, or create another chunk.
         if end >= copy_storage.capacity() {
-            return Err(AllocationError::OutOfPoolError(format!("The copy stack allocator is out of memory !")));
+            return Err(AllocationError::OutOfMemoryError(format!("The copy stack allocator is out of memory !")));
         }
 
         //Set the first unused memory address of the memory chunk to the index calculated earlier.

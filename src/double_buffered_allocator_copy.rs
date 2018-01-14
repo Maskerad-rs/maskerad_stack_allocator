@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use StackAllocatorCopy;
-use allocation_error::{AllocationResult, AllocationError};
+use allocation_error::{AllocationResult};
 
 /// A double-buffered allocator for data implementing the Copy trait.
 ///

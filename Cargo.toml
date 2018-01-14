@@ -15,10 +15,9 @@ appveyor = { repository = "Malkaviel/maskerad-stack-allocator", branch = "master
 travis-ci = { repository = "Maskerad-rs/maskerad_stack_allocator", branch = "master" }
 is-it-maintained-issue-resolution = { repository = "Maskerad-rs/maskerad_stack_allocator" }
 is-it-maintained-open-issues = { repository = "Maskerad-rs/maskerad_stack_allocator" }
-maintenance = { status = "actively-developed" }
+maintenance = { status = "passively-developed" }
 
 [dependencies]
-lazy_static = "1.0.0"
 
 [dev-dependencies]
 bencher = "0.1.4"

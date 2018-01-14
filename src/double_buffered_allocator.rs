@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use StackAllocator;
-use allocation_error::{AllocationError, AllocationResult};
+use allocation_error::{AllocationResult};
 
 /// A double-buffered allocator for data implementing the Drop trait.
 ///
@@ -90,41 +90,31 @@ impl DoubleBufferedAllocator {
     pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.active_buffer().alloc(op)
+        self.buffers[self.current as usize].alloc(op)
     }
 
     /// Resets completely the active buffer, dropping all its content.
     pub fn reset(&self) {
-        self.active_buffer().reset();
+        self.buffers[self.current as usize].reset();
+    }
+
+    pub fn active_buffer(&self) -> &StackAllocator {
+        &self.buffers[self.current as usize]
+    }
+
+    pub fn inactive_buffer(&self) -> &StackAllocator {
+        &self.buffers[!self.current as usize]
     }
 
     /// Resets partially the active buffer, dropping all the content lying between the marker
     /// and the first unused memory address.
     pub fn reset_to_marker(&self, marker: usize) {
-        self.active_buffer().reset_to_marker(marker);
+         self.buffers[self.current as usize].reset_to_marker(marker);
     }
 
     /// Returns the index of the first unused memory address in the active buffer.
     pub fn marker(&self) -> usize {
-        self.active_buffer().marker()
-    }
-
-    /// Return an immutable reference to the active StackAllocator.
-    ///
-    /// Most of the time, you should not have to access the stack allocators directly.
-    /// This structure mimics the StackAllocator's API and have the swap_buffers() function to swap
-    /// the active allocator to the inactive one, and vice-versa.
-    pub fn active_buffer(&self) -> &StackAllocator {
-        &self.buffers[self.current as usize]
-    }
-
-    /// Return an immutable reference to the inactive StackAllocator.
-    ///
-    /// Most of the time, you should not have to access the stack allocators directly.
-    /// This structure mimics the StackAllocator's API and have the swap_buffers() function to swap
-    /// the active allocator to the inactive one, and vice-versa.
-    pub fn inactive_buffer(&self) -> &StackAllocator {
-        &self.buffers[!self.current as usize]
+        self.buffers[self.current as usize].marker()
     }
 
     /// Swap the buffers. The inactive one becomes the active.
@@ -160,16 +150,16 @@ mod double_buffer_allocator_test {
     #[test]
     fn new() {
         let alloc = DoubleBufferedAllocator::with_capacity(100);
-        assert_eq!(alloc.active_buffer().storage().borrow().capacity(), 100);
-        assert_eq!(alloc.inactive_buffer().storage().borrow().capacity(), 100);
+        assert_eq!(alloc.active_buffer().capacity(), 100);
+        assert_eq!(alloc.inactive_buffer().capacity(), 100);
     }
 
     #[test]
     fn reset() {
         let alloc = DoubleBufferedAllocator::with_capacity(100);
 
-        let start_chunk_active_buffer = alloc.active_buffer().storage().borrow().as_ptr();
-        let start_chunk_inactive_buffer = alloc.inactive_buffer().storage().borrow().as_ptr();
+        let start_chunk_active_buffer = alloc.active_buffer().storage_as_ptr();
+        let start_chunk_inactive_buffer = alloc.inactive_buffer().storage_as_ptr();
 
         let index_active_buffer_top_stack = alloc.active_buffer().marker();
         let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
@@ -213,8 +203,8 @@ mod double_buffer_allocator_test {
     #[test]
     fn swap() {
         let mut alloc = DoubleBufferedAllocator::with_capacity(100);
-        let start_chunk_first_buffer = alloc.buffers[0].storage().borrow().as_ptr();
-        let start_chunk_second_buffer = alloc.buffers[1].storage().borrow().as_ptr();
+        let start_chunk_first_buffer = alloc.buffers[0].storage_as_ptr();
+        let start_chunk_second_buffer = alloc.buffers[1].storage_as_ptr();
 
         let index_first_buffer_top_stack = alloc.buffers[0].marker();
         let index_second_buffer_top_stack = alloc.buffers[1].marker();

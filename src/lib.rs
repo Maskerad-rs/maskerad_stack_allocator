@@ -21,9 +21,6 @@
 //! - a **double-buffered** allocator for data implementing the **Copy** trait,
 //!
 //!
-//! - a **pool** allocator for data implementing the **Copy** trait,
-//!
-//! - a **pool** allocator for data implementing the **Drop** trait,
 //!
 //! All those allocators are for single-threaded scenarios, and their primary purpose is to prevent memory fragmentation.
 //!
@@ -45,11 +42,12 @@
 #![feature(coerce_unsized)]
 #![feature(unsize)]
 
-#[macro_use]
-extern crate lazy_static;
-
 extern crate alloc;
 extern crate core;
+
+//____________________________________
+
+//____________________________________
 
 mod stack_allocator;
 mod double_buffered_allocator;
@@ -58,13 +56,6 @@ mod memory_chunk;
 mod stack_allocator_copy;
 mod double_buffered_allocator_copy;
 mod double_ended_allocator_copy;
-mod pool_allocator_copy;
-mod pool_item;
-mod allocator_hub;
-
-mod pool_allocator;
-mod unique_ptr;
-mod shared_ptr;
 
 pub mod allocation_error;
 pub mod utils;
@@ -80,9 +71,4 @@ pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
 
 pub use double_ended_allocator::DoubleEndedStackAllocator;
 pub use double_ended_allocator_copy::DoubleEndedStackAllocatorCopy;
-
-pub use pool_allocator::PoolAllocator;
-pub use unique_ptr::UniquePtr;
-pub use shared_ptr::{SharedPtr, WeakPtr};
-pub use pool_item::PoolItem;
 

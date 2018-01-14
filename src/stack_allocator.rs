@@ -118,7 +118,7 @@ impl StackAllocator {
         }
     }
 
-    /// Returns an immutable reference to the memory chunk used by the allocator.
+    /// Returns an immutable reference to the memory chunk used by the stack allocator.
     pub fn storage(&self) -> &RefCell<MemoryChunk> {
         &self.storage
     }
@@ -186,54 +186,54 @@ impl StackAllocator {
     /// the current top of the stack.
     #[inline]
     fn alloc_non_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<(*const u8, *const u8)> {
-        //mutably borrow the memory chunk.
-        let non_copy_storage = self.storage.borrow_mut();
 
-        //Get the index of the first unused byte in the memory chunk.
-        let fill = non_copy_storage.fill();
+                let non_copy_storage = self.storage.borrow();
 
-        //Get the index of where we'll write the type description data
-        //(the first unused byte in the memory chunk).
-        let type_description_start = fill;
+                //Get the index of the first unused byte in the memory chunk.
+                let fill = non_copy_storage.fill();
 
-        // Get the index of where the object should reside (unaligned location actually).
-        let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
+                //Get the index of where we'll write the type description data
+                //(the first unused byte in the memory chunk).
+                let type_description_start = fill;
 
-        //With the index to the unaligned memory address, determine the index to
-        //the aligned memory address where the object will reside,
-        //according to its memory alignment.
-        let start = utils::round_up(after_type_description, align);
+                // Get the index of where the object should reside (unaligned location actually).
+                let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
 
-        //Determine the index of the next aligned memory address for a type description, according to the size of the object
-        //and the memory alignment of a type description.
-        let end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
+                //With the index to the unaligned memory address, determine the index to
+                //the aligned memory address where the object will reside,
+                //according to its memory alignment.
+                let start = utils::round_up(after_type_description, align);
 
-        //If the allocator becomes oom after this possible allocation, abort the program.
-        if end >= non_copy_storage.capacity() {
-            return Err(AllocationError::OutOfMemoryError(format!("The stack allocator is out of memory !")));
-        }
+                //Determine the index of the next aligned memory address for a type description, according to the size of the object
+                //and the memory alignment of a type description.
+                let end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
 
-        //Update the current top of the stack.
-        //The first unused memory address is at index 'end',
-        //where the next type description would be written
-        //if an allocation was asked.
-        non_copy_storage.set_fill(end);
+                //If the allocator becomes oom after this possible allocation, abort the program.
+                if end >= non_copy_storage.capacity() {
+                    return Err(AllocationError::OutOfMemoryError(format!("The stack allocator is out of memory !")));
+                }
 
-        unsafe {
-            // Get a raw pointer to the start of our MemoryChunk's RawVec
-            let start_storage = non_copy_storage.as_ptr();
+                //Update the current top of the stack.
+                //The first unused memory address is at index 'end',
+                //where the next type description would be written
+                //if an allocation was asked.
+                non_copy_storage.set_fill(end);
 
-            Ok((
-                //From this raw pointer, get the correct raw pointers with
-                //the indices we calculated earlier.
+                unsafe {
+                    // Get a raw pointer to the start of our MemoryChunk's RawVec
+                    let start_storage = non_copy_storage.as_ptr();
 
-                //The raw pointer to the type description of the object.
-                start_storage.offset(type_description_start as isize),
+                    Ok((
+                        //From this raw pointer, get the correct raw pointers with
+                        //the indices we calculated earlier.
 
-                //The raw pointer to the object.
-                start_storage.offset(start as isize)
-            ))
-        }
+                        //The raw pointer to the type description of the object.
+                        start_storage.offset(type_description_start as isize),
+
+                        //The raw pointer to the object.
+                        start_storage.offset(start as isize)
+                    ))
+                }
     }
 
     /// Returns the index of the first unused memory address.
@@ -262,7 +262,7 @@ impl StackAllocator {
     ///
     /// ```
     pub fn marker(&self) -> usize {
-        self.storage.borrow_mut().fill()
+        self.storage.borrow().fill()
     }
 
     /// Reset the allocator, dropping all the content residing inside it.
@@ -413,6 +413,14 @@ impl StackAllocator {
             self.storage.borrow().set_fill(marker);
         }
     }
+
+    pub fn capacity(&self) -> usize {
+        self.storage.borrow().capacity()
+    }
+
+    pub fn storage_as_ptr(&self) -> *const u8 {
+        self.storage.borrow().as_ptr()
+    }
 }
 
 impl Drop for StackAllocator {
@@ -459,7 +467,7 @@ mod stack_allocator_test {
         unsafe {
             //create a StackAllocator with the specified size.
             let alloc = StackAllocator::with_capacity(200);
-            let start_chunk = alloc.storage.borrow().as_ptr();
+            let start_chunk = alloc.storage_as_ptr();
             let first_unused_mem_addr = start_chunk.offset(alloc.storage.borrow().fill() as isize);
 
             assert_eq!(start_chunk, first_unused_mem_addr);
@@ -476,7 +484,7 @@ mod stack_allocator_test {
         }).unwrap();
 
         unsafe {
-            let start_alloc = alloc.storage.borrow().as_ptr();
+            let start_alloc = alloc.storage_as_ptr();
             let top_stack_index = alloc.storage.borrow().fill();
             let top_stack = start_alloc.offset(top_stack_index as isize);
             assert_ne!(start_alloc, top_stack);
@@ -492,7 +500,7 @@ mod stack_allocator_test {
         }).unwrap();
 
         let top_stack_index = alloc.marker();
-        let start_alloc = alloc.storage.borrow().as_ptr();
+        let start_alloc = alloc.storage_as_ptr();
         let mut current_top_stack_index = alloc.storage.borrow().fill();
 
         unsafe {
