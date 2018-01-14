@@ -98,7 +98,7 @@ Custom memory allocators can help with both problems.
 
 We can distinguish 3 types of memory allocation :
 - **Persistent** memory allocation: data is allocated when the program is started, and freed when
-the program is shut down. The [arena crate](https://doc.rust-lang.org/1.1.0/arena) or a stack-based allocator can help here.
+the program is shut down. The [region-based](https://en.wikipedia.org/wiki/Region-based_memory_management) allocator [arena](https://doc.rust-lang.org/1.1.0/arena) or a stack-based allocator can help here.
 
 - **Dynamic** memory allocation: data is allocated and freed during the lifetime of the program, but
 we can't predict *when* this data is allocated and freed. An [Object Pool](https://github.com/Maskerad-rs/Maskerad_memory_allocator)
