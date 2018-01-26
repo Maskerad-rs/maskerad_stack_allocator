@@ -77,7 +77,7 @@ impl StackAllocatorCopy {
         &self.storage
     }
 
-    /// Allocates data in the allocator's memory.
+    /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
     ///
     /// # Panics
     /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
@@ -94,15 +94,15 @@ impl StackAllocatorCopy {
     /// assert_eq!(my_i32, &mut 26);
     /// ```
     #[inline]
-    pub fn alloc<T: Copy, F>(&self, op: F) -> AllocationResult<&mut T>
+    pub fn alloc_mut<T: Copy, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.alloc_copy(op)
+        self.alloc_copy_mut(op)
     }
 
     //Functions for the copyable part of the stack allocator.
     #[inline]
-    fn alloc_copy<T: Copy, F>(&self, op: F) -> AllocationResult<&mut T>
+    fn alloc_copy_mut<T: Copy, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
@@ -117,6 +117,49 @@ impl StackAllocatorCopy {
 
             //return a mutable reference to this pointer.
             Ok(&mut *ptr)
+        }
+    }
+
+    /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
+    ///
+    /// # Panics
+    /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::StackAllocatorCopy;
+    ///
+    /// let allocator = StackAllocatorCopy::with_capacity(100);
+    ///
+    /// let my_i32 = allocator.alloc(|| {
+    ///     26 as i32
+    /// }).unwrap();
+    /// assert_eq!(my_i32, &mut 26);
+    /// ```
+    #[inline]
+    pub fn alloc<T: Copy, F>(&self, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        self.alloc_copy(op)
+    }
+
+    //Functions for the copyable part of the stack allocator.
+    #[inline]
+    fn alloc_copy<T: Copy, F>(&self, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            //Get an aligned raw pointer to place the object in it.
+            let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
+
+            //cast this raw pointer to the type of the object.
+            let ptr = ptr as *mut T;
+
+            //Write the data in the memory location.
+            ptr::write(&mut (*ptr), op());
+
+            //return a mutable reference to this pointer.
+            Ok(&*ptr)
         }
     }
 

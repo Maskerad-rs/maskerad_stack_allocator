@@ -98,7 +98,7 @@ impl DoubleEndedStackAllocatorCopy {
         &self.storage_temp
     }
 
-    /// Allocates data in the allocator's memory.
+    /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
     ///
     /// # Panics
     /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
@@ -123,10 +123,10 @@ impl DoubleEndedStackAllocatorCopy {
     /// assert_eq!(bob, &mut 0xb0b);
     /// ```
     #[inline]
-    pub fn alloc<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
+    pub fn alloc_mut<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.alloc_copy(chunk, op)
+        self.alloc_copy_mut(chunk, op)
     }
 
 
@@ -135,7 +135,7 @@ impl DoubleEndedStackAllocatorCopy {
 
     /// The function actually writing data in the memory chunk
     #[inline]
-    fn alloc_copy<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
+    fn alloc_copy_mut<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
@@ -150,6 +150,61 @@ impl DoubleEndedStackAllocatorCopy {
 
             //Return a mutable reference to the object.
             Ok(&mut *ptr)
+        }
+    }
+
+    /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
+    ///
+    /// # Panics
+    /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocatorCopy;
+    /// use maskerad_memory_allocators::ChunkType;
+    ///
+    ///
+    /// let allocator = DoubleEndedStackAllocatorCopy::with_capacity(50, 50);
+    ///
+    /// let my_u64 = allocator.alloc(&ChunkType::TempData, || {
+    ///     4587 as u64
+    /// }).unwrap();
+    ///
+    /// let bob = allocator.alloc(&ChunkType::ResidentData, || {
+    ///     0xb0b as u64
+    /// }).unwrap();
+    ///
+    /// assert_eq!(my_u64, &mut 4587);
+    /// assert_eq!(bob, &mut 0xb0b);
+    /// ```
+    #[inline]
+    pub fn alloc<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        self.alloc_copy(chunk, op)
+    }
+
+
+
+    //Functions for the non-copyable part of the arena.
+
+    /// The function actually writing data in the memory chunk
+    #[inline]
+    fn alloc_copy<T: Copy, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            //Get an aligned raw pointer to place the object in it.
+            let ptr = self.alloc_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>())?;
+
+            //cast this raw pointer to the type of the object.
+            let ptr = ptr as *mut T;
+
+            //Write the data in the memory location.
+            ptr::write(&mut (*ptr), op());
+
+            //Return a mutable reference to the object.
+            Ok(&*ptr)
         }
     }
 

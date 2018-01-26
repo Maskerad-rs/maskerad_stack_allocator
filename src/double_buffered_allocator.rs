@@ -82,14 +82,24 @@ impl DoubleBufferedAllocator {
         }
     }
 
-    /// Allocates data in the active buffer.
+    /// Allocates data in the active buffer, returning a mutable reference to the allocated data.
     ///
     /// # Panic
     /// This function will panic if the allocation exceeds the maximum storage capacity of the active allocator.
     ///
-    pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&mut T>
+    pub fn alloc_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
+        self.buffers[self.current as usize].alloc_mut(op)
+    }
+
+    /// Allocates data in the active buffer, returning an immutable reference to the allocated data.
+    ///
+    /// # Panic
+    /// This function will panic if the allocation exceeds the maximum storage capacity of the active allocator.
+    ///
+    pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T {
         self.buffers[self.current as usize].alloc(op)
     }
 

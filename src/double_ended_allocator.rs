@@ -106,7 +106,7 @@ use memory_chunk::{ChunkType, MemoryChunk};
 /// }
 ///
 /// impl Level {
-///     pub fn from_config(config: &mut LevelConfig) -> Self {
+///     pub fn from_config(config: &LevelConfig) -> Self {
 ///         Level {
 ///             number: config.data(),
 ///         }
@@ -197,7 +197,7 @@ impl DoubleEndedStackAllocator {
         &self.storage_temp
     }
 
-    /// Allocates data in the allocator's memory.
+    /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
     ///
     /// # Panics
     /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
@@ -241,10 +241,10 @@ impl DoubleEndedStackAllocator {
     /// assert_eq!(another_monster.hp, 1);
     /// ```
     #[inline]
-    pub fn alloc<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
+    pub fn alloc_mut<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy(chunk, op)
+        self.alloc_non_copy_mut(chunk, op)
     }
 
 
@@ -253,7 +253,7 @@ impl DoubleEndedStackAllocator {
 
     /// The function actually writing data in the memory chunk
     #[inline]
-    fn alloc_non_copy<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
+    fn alloc_non_copy_mut<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
@@ -280,6 +280,92 @@ impl DoubleEndedStackAllocator {
 
             //Return a mutable reference to the object.
             Ok(&mut *ptr)
+        }
+    }
+
+    /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
+    ///
+    /// # Panics
+    /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::ChunkType;
+    ///
+    /// struct Monster {
+    ///     hp: u32,
+    ///     level: u32,
+    /// }
+    ///
+    /// impl Default for Monster {
+    ///     fn default() -> Self {
+    ///         Monster {
+    ///         hp: 1,
+    ///         level: 1,
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Drop for Monster {
+    ///     fn drop(&mut self) {
+    ///         println!("I'm dying !");
+    ///     }
+    /// }
+    ///
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
+    ///
+    /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
+    ///     Monster::default()
+    /// }).unwrap();
+    ///
+    /// let another_monster = allocator.alloc(&ChunkType::ResidentData, || {
+    ///     Monster::default()
+    /// }).unwrap();
+    ///
+    /// assert_eq!(my_monster.level, 1);
+    /// assert_eq!(another_monster.hp, 1);
+    /// ```
+    #[inline]
+    pub fn alloc<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        self.alloc_non_copy(chunk, op)
+    }
+
+
+
+    //Functions for the non-copyable part of the arena.
+
+    /// The function actually writing data in the memory chunk
+    #[inline]
+    fn alloc_non_copy<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            //Get the type description of the type T (get its vtable).
+            let type_description = utils::get_type_description::<T>();
+
+            //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>())?;
+
+            //Cast them.
+            let type_description_ptr = type_description_ptr as *mut usize;
+            let ptr = ptr as *mut T;
+
+            //write in our type description along with a bit indicating that the object has *not*
+            //been initialized yet.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
+
+            //Initialize the object.
+            ptr::write(&mut (*ptr), op());
+
+            //Now that we are done, update the type description to indicate
+            //that the object is there.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
+
+            //Return a mutable reference to the object.
+            Ok(&*ptr)
         }
     }
 

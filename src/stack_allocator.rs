@@ -123,7 +123,7 @@ impl StackAllocator {
         &self.storage
     }
 
-    /// Allocates data in the allocator's memory.
+    /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
     ///
     /// # Error
     /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
@@ -140,10 +140,10 @@ impl StackAllocator {
     /// assert_eq!(my_i32, &mut 26);
     /// ```
     #[inline]
-    pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&mut T>
+    pub fn alloc_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy(op)
+        self.alloc_non_copy_mut(op)
     }
 
 
@@ -152,7 +152,7 @@ impl StackAllocator {
 
     /// The function actually writing data in the memory chunk
     #[inline]
-    fn alloc_non_copy<T, F>(&self, op: F) -> AllocationResult<&mut T>
+    fn alloc_non_copy_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
         unsafe {
@@ -179,6 +179,65 @@ impl StackAllocator {
 
             //Return a mutable reference to the object.
             Ok(&mut *ptr)
+        }
+    }
+
+    /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
+    ///
+    /// # Error
+    /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100);
+    ///
+    /// let my_i32 = allocator.alloc(|| {
+    ///     26 as i32
+    /// }).unwrap();
+    /// assert_eq!(my_i32, &mut 26);
+    /// ```
+    #[inline]
+    pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        self.alloc_non_copy(op)
+    }
+
+
+
+    //Functions for the non-copyable part of the arena.
+
+    /// The function actually writing data in the memory chunk
+    #[inline]
+    fn alloc_non_copy<T, F>(&self, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            //Get the type description of the type T (get its vtable).
+            let type_description = utils::get_type_description::<T>();
+
+            //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
+
+            //Cast them.
+            let type_description_ptr = type_description_ptr as *mut usize;
+            let ptr = ptr as *mut T;
+
+            //write in our type description along with a bit indicating that the object has *not*
+            //been initialized yet.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
+
+            //Initialize the object.
+            ptr::write(&mut (*ptr), op());
+
+            //Now that we are done, update the type description to indicate
+            //that the object is there.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
+
+            //Return a mutable reference to the object.
+            Ok(&*ptr)
         }
     }
 
