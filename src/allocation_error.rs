@@ -14,12 +14,14 @@ use std::error::Error;
 #[derive(Debug)]
 pub enum AllocationError {
     OutOfMemoryError(String),
+    OutOfPoolError(String),
 }
 
 impl fmt::Display for AllocationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &AllocationError::OutOfMemoryError(ref description) => write!(f, "Out of memory error: {}", description),
+            &AllocationError::OutOfPoolError(ref description) => write!(f, "Out of pool error: {}", description),
         }
     }
 }
@@ -28,12 +30,14 @@ impl Error for AllocationError {
     fn description(&self) -> &str {
         match self {
             &AllocationError::OutOfMemoryError(_) => "OutOfMemoryError",
+            &AllocationError::OutOfPoolError(_) => "OutOfPoolError",
         }
     }
 
     fn cause(&self) -> Option<&Error> {
         match self {
             &AllocationError::OutOfMemoryError(_) => None,
+            &AllocationError::OutOfPoolError(_) => None,
         }
     }
 }

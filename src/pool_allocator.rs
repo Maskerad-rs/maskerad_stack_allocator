@@ -21,6 +21,7 @@ pub struct PoolAllocator {
 }
 
 impl PoolAllocator {
+    /// Creates a poolAllocator with `nb_item` chunks of `size_item` size in byte.
     pub fn new(nb_item: usize, size_item: usize) -> Self {
         let mut storage = Vec::with_capacity(nb_item);
         for i in 0..nb_item - 1 {
@@ -50,13 +51,16 @@ impl PoolAllocator {
         self.first_available.set(first_available);
     }
 
+    /// Allocates data in the pool allocator, returning a `SharedPtr`.
+    /// # Errors
+    /// This function will return an error if all the pools are used when trying to allocate this data.
     pub fn alloc_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
         where F: FnOnce() -> T
     {
         self.alloc_non_copy_shared(op)
     }
 
-    pub fn alloc_non_copy_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
+    fn alloc_non_copy_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
         where F: FnOnce() -> T
     {
         unsafe {
@@ -98,6 +102,9 @@ impl PoolAllocator {
         }
     }
 
+    /// Allocates data in the pool allocator, returning an `UniquePtr`.
+    /// # Errors
+    /// This function will return an error if all the pools are used when trying to allocate this data.
     #[inline]
     pub fn alloc_unique<F, T>(&self, op: F) -> AllocationResult<UniquePtr<T>>
         where F: FnOnce() -> T

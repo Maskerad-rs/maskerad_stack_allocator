@@ -23,8 +23,6 @@
 //!
 //! - a **single-threaded pool** allocator for data implementing the **Drop** trait,
 //!
-//! - a **single-threaded pool** allocator for data implementing the **Copy** trait,
-//!
 //! - **Unique** and **Shared** smart pointers used by the pool allocators, almost identical
 //! to `Box` and `Rc` smart pointers in implementation and intent.
 //!
@@ -64,6 +62,10 @@ mod memory_chunk;
 mod stack_allocator_copy;
 mod double_buffered_allocator_copy;
 mod double_ended_allocator_copy;
+mod shared_ptr;
+mod unique_ptr;
+mod pool_allocator;
+mod pool_item;
 
 pub mod allocation_error;
 pub mod utils;
@@ -80,3 +82,4 @@ pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
 pub use double_ended_allocator::DoubleEndedStackAllocator;
 pub use double_ended_allocator_copy::DoubleEndedStackAllocatorCopy;
 
+pub use pool_allocator::PoolAllocator;
