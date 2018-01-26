@@ -298,3 +298,4 @@ impl<'a, T: ?Sized> SharedUniquePtr<T> for WeakPtr<'a, T> {
 }
 
 impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<WeakPtr<'a, U>> for WeakPtr<'a, T> {}
+

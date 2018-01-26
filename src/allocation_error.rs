@@ -42,3 +42,4 @@ impl Error for AllocationError {
 
 /// A simple typedef, for convenience.
 pub type AllocationResult<T> = Result<T, AllocationError>;
+
