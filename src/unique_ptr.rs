@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::ptr::Unique;
+use std::ptr::NonNull;
 use pool_allocator::PoolAllocator;
 use std::hash::{Hasher, Hash};
 use std::cmp::Ordering;
@@ -21,17 +21,17 @@ use std::marker::Unsize;
 /// `UniquePtr<T>` is basically a `Box<T>`. It provides unique ownership to a value from a pool,
 /// and drop this value when it goes out of scope.
 pub struct UniquePtr<'a, T: ?Sized> {
-    ptr: Unique<T>,
+    ptr: NonNull<T>,
     pool: &'a PoolAllocator,
     chunk_index: usize,
 }
 
 impl<'a, T: ?Sized> UniquePtr<'a, T> {
     pub unsafe fn from_raw(raw: *mut T, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
-        UniquePtr::from_unique(Unique::new_unchecked(raw), pool, chunk_index)
+        UniquePtr::from_nonnull(NonNull::new_unchecked(raw), pool, chunk_index)
     }
 
-    pub unsafe fn from_unique(ptr: Unique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
+    pub unsafe fn from_nonnull(ptr: NonNull<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
         UniquePtr {
             ptr,
             pool,

@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::ptr::Shared;
+use std::ptr::NonNull;
 use std::cell::Cell;
 use std::marker;
 use std::ops;
@@ -13,7 +13,6 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::fmt;
 use std::intrinsics::abort;
-use unique_ptr::UniquePtr;
 
 use pool_allocator::PoolAllocator;
 
@@ -28,7 +27,7 @@ pub struct SharedUnique<T: ?Sized> {
 
 
 pub struct SharedPtr<'a, T: ?Sized> {
-    ptr: Shared<SharedUnique<T>>,
+    ptr: NonNull<SharedUnique<T>>,
     pool: &'a PoolAllocator,
     chunk_index: usize,
     phantom: marker::PhantomData<T>,
@@ -41,7 +40,7 @@ impl<'a, T: ?Sized> !marker::Sync for SharedPtr<'a, T> {}
 impl<'a, T: ?Sized> SharedPtr<'a, T> {
     pub unsafe fn from_raw(ptr: *mut SharedUnique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
         SharedPtr {
-            ptr: Shared::new_unchecked(ptr),
+            ptr: NonNull::new_unchecked(ptr),
             pool,
             chunk_index,
             phantom: marker::PhantomData,
@@ -205,7 +204,7 @@ impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<SharedPtr<
 
 
 pub struct WeakPtr<'a, T: ?Sized> {
-    ptr: Shared<SharedUnique<T>>,
+    ptr: NonNull<SharedUnique<T>>,
     pool: &'a PoolAllocator,
     chunk_index: usize,
 }

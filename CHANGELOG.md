@@ -75,3 +75,8 @@ Added a pool allocator for data implementing the Drop trait.
 Added UniquePtr, SharedPtr and WeakPtr. Used by the pool allocator, they are almost similar to
 Box, Rc and Weak.
 
+#### version 3.1.1
+
+All smart pointers uses the NonNull<T> (The new name of Shared<T>) struct as a backend now, instead
+of Shared<T> for WeakPtr and SharedPtr, and Unique<T> for UniquePtr. 
+

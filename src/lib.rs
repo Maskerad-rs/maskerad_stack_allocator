@@ -30,7 +30,7 @@
 //!
 //! All those allocators are for single-threaded scenarios, and their primary purpose is to prevent memory fragmentation.
 //!
-//! This is a **nightly-only** library.
+//! This is a **nightly-only** library (last rust nightly version tested: **1.25**).
 
 
 
