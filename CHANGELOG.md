@@ -65,3 +65,13 @@ Coming later : memory pools if all goes well.
 
 Updated the README_CRATE.md and README.md, modified the badges and links to the crate and docs.
 
+
+#### version 3.1.0
+
+Stack allocators can return immutable references now.
+
+Added a pool allocator for data implementing the Drop trait.
+
+Added UniquePtr, SharedPtr and WeakPtr. Used by the pool allocator, they are almost similar to
+Box, Rc and Weak.
+
