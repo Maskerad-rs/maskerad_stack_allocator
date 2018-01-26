@@ -21,6 +21,14 @@
 //! - a **double-buffered** allocator for data implementing the **Copy** trait,
 //!
 //!
+//! - a **single-threaded pool** allocator for data implementing the **Drop** trait,
+//!
+//! - a **single-threaded pool** allocator for data implementing the **Copy** trait,
+//!
+//! - **Unique** and **Shared** smart pointers used by the pool allocators, almost identical
+//! to `Box` and `Rc` smart pointers in implementation and intent.
+//!
+//! Its primary purpose is to prevent memory fragmentation.
 //!
 //! All those allocators are for single-threaded scenarios, and their primary purpose is to prevent memory fragmentation.
 //!

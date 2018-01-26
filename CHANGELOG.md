@@ -64,3 +64,4 @@ Coming later : memory pools if all goes well.
 #### version 2.0.0 -> version 2.0.1
 
 Updated the README_CRATE.md and README.md, modified the badges and links to the crate and docs.
+
