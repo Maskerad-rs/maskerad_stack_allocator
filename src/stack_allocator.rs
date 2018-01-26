@@ -545,3 +545,4 @@ mod stack_allocator_test {
         }
     }
 }
+
