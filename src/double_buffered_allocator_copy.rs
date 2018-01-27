@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use StackAllocatorCopy;
+use stack_allocator_copy::StackAllocatorCopy;
 use allocation_error::{AllocationResult};
 
 /// A double-buffered allocator for data implementing the Copy trait.
@@ -15,7 +15,7 @@ use allocation_error::{AllocationResult};
 ///
 /// # Example
 /// ```
-/// use maskerad_memory_allocators::DoubleBufferedAllocatorCopy;
+/// use maskerad_memory_allocators::stacks::DoubleBufferedAllocatorCopy;
 ///
 ///
 /// let mut allocator = DoubleBufferedAllocatorCopy::with_capacity(100); //100 bytes.
@@ -48,12 +48,12 @@ impl DoubleBufferedAllocatorCopy {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_memory_allocators::DoubleBufferedAllocatorCopy;
+    /// use maskerad_memory_allocators::stacks::DoubleBufferedAllocatorCopy;
     ///
     /// let allocator = DoubleBufferedAllocatorCopy::with_capacity(100);
     ///
-    /// assert_eq!(allocator.active_buffer().storage().borrow().capacity(), 100);
-    /// assert_eq!(allocator.inactive_buffer().storage().borrow().capacity(), 100);
+    /// assert_eq!(allocator.active_buffer().storage().capacity(), 100);
+    /// assert_eq!(allocator.inactive_buffer().storage().capacity(), 100);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         DoubleBufferedAllocatorCopy {
@@ -132,16 +132,16 @@ mod double_buffer_allocator_test {
     #[test]
     fn new() {
         let alloc = DoubleBufferedAllocatorCopy::with_capacity(100);
-        assert_eq!(alloc.active_buffer().storage().borrow().capacity(), 100);
-        assert_eq!(alloc.inactive_buffer().storage().borrow().capacity(), 100);
+        assert_eq!(alloc.active_buffer().storage().capacity(), 100);
+        assert_eq!(alloc.inactive_buffer().storage().capacity(), 100);
     }
 
     #[test]
     fn reset() {
         let alloc = DoubleBufferedAllocatorCopy::with_capacity(100);
 
-        let start_chunk_active_buffer = alloc.active_buffer().storage().borrow().as_ptr();
-        let start_chunk_inactive_buffer = alloc.inactive_buffer().storage().borrow().as_ptr();
+        let start_chunk_active_buffer = alloc.active_buffer().storage().as_ptr();
+        let start_chunk_inactive_buffer = alloc.inactive_buffer().storage().as_ptr();
 
         let index_active_buffer_top_stack = alloc.active_buffer().marker();
         let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
@@ -185,8 +185,8 @@ mod double_buffer_allocator_test {
     #[test]
     fn swap() {
         let mut alloc = DoubleBufferedAllocatorCopy::with_capacity(100);
-        let start_chunk_first_buffer = alloc.buffers[0].storage().borrow().as_ptr();
-        let start_chunk_second_buffer = alloc.buffers[1].storage().borrow().as_ptr();
+        let start_chunk_first_buffer = alloc.buffers[0].storage().as_ptr();
+        let start_chunk_second_buffer = alloc.buffers[1].storage().as_ptr();
 
         let index_first_buffer_top_stack = alloc.buffers[0].marker();
         let index_second_buffer_top_stack = alloc.buffers[1].marker();

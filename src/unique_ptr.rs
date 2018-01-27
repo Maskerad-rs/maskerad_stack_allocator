@@ -12,7 +12,6 @@ use std::cmp::Ordering;
 use std::ops::{DerefMut, Deref, CoerceUnsized};
 use std::borrow;
 use std::fmt;
-use allocation_error::AllocationResult;
 use std::marker::Unsize;
 
 //TODO: ?Sized ? tester dans les unit tests avec un trait object.

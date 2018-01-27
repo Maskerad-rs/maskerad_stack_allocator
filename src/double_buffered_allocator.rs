@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use StackAllocator;
+use stack_allocator::StackAllocator;
 use allocation_error::{AllocationResult};
 
 /// A double-buffered allocator for data implementing the Drop trait.
@@ -15,27 +15,8 @@ use allocation_error::{AllocationResult};
 ///
 /// # Example
 /// ```
-/// use maskerad_memory_allocators::DoubleBufferedAllocator;
+/// use maskerad_memory_allocators::stacks::DoubleBufferedAllocator;
 ///
-/// struct Monster {
-///     hp :u32,
-///     level: u32,
-/// }
-///
-/// impl Default for Monster {
-///     fn default() -> Self {
-///         Monster {
-///         hp: 1,
-///         level: 1,
-///         }
-///     }
-/// }
-///
-/// impl Drop for Monster {
-///     fn drop(&mut self) {
-///         println!("I'm dying !");
-///     }
-/// }
 ///
 /// let mut allocator = DoubleBufferedAllocator::with_capacity(100); //100 bytes.
 /// let mut closed = false;
@@ -49,9 +30,8 @@ use allocation_error::{AllocationResult};
 ///
 ///     //allocate with the current buffer, leaving the data in the inactive buffer intact.
 ///     //You can use this data during this frame, or the next frame.
-///     //After the next frame, the monster will be dropped and print "i'm dying!".
-///     let my_monster = allocator.alloc(|| {
-///         Monster::default()
+///     let my_vec: &Vec<u8> = allocator.alloc(|| {
+///         Vec::with_capacity(10)
 ///     }).unwrap();
 ///
 ///     closed = true;
@@ -68,12 +48,12 @@ impl DoubleBufferedAllocator {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_memory_allocators::DoubleBufferedAllocator;
+    /// use maskerad_memory_allocators::stacks::DoubleBufferedAllocator;
     ///
     /// let allocator = DoubleBufferedAllocator::with_capacity(100);
     ///
-    /// assert_eq!(allocator.active_buffer().storage().borrow().capacity(), 100);
-    /// assert_eq!(allocator.inactive_buffer().storage().borrow().capacity(), 100);
+    /// assert_eq!(allocator.active_buffer().storage().capacity(), 100);
+    /// assert_eq!(allocator.inactive_buffer().storage().capacity(), 100);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         DoubleBufferedAllocator {
@@ -137,7 +117,6 @@ impl DoubleBufferedAllocator {
 #[cfg(test)]
 mod double_buffer_allocator_test {
     use super::*;
-
     //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
     struct Monster {
         _hp :u32,

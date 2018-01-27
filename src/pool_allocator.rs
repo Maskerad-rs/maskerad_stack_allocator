@@ -36,8 +36,8 @@ impl PoolAllocator {
         }
     }
 
-    /// Returns an immutable reference to the vector of memory chunks used by the allocator.
-    pub fn storage(&self) -> &Vec<RefCell<PoolItem>> {
+    /// Returns an immutable slice of the vector of memory chunks used by the allocator.
+    pub fn storage(&self) -> &[RefCell<PoolItem>] {
         &self.storage
     }
 
@@ -157,7 +157,7 @@ impl PoolAllocator {
     fn alloc_non_copy_inner(&self, chunk_index: usize, n_bytes: usize, align: usize) -> AllocationResult<(*const u8, *const u8)> {
 
         //Borrow mutably the first pool item available in the pool allocator.
-        let non_copy_storage = self.storage.get(chunk_index).unwrap().borrow_mut();
+        let non_copy_storage = self.storage().get(chunk_index).unwrap().borrow();
 
         //This chunk of memory is now in use, update the index of the first available chunk of memory.
         self.first_available.set(non_copy_storage.next());

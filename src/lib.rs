@@ -23,12 +23,10 @@
 //!
 //! - a **single-threaded pool** allocator for data implementing the **Drop** trait,
 //!
-//! - **Unique** and **Shared** smart pointers used by the pool allocators, almost identical
-//! to `Box` and `Rc` smart pointers in implementation and intent.
+//! - **Unique**, **Weak** and **Shared** smart pointers used by the pool allocators, almost identical
+//! to `Box`, `Weak` and `Rc` smart pointers in implementation and purpose.
 //!
 //! Its primary purpose is to prevent memory fragmentation.
-//!
-//! All those allocators are for single-threaded scenarios, and their primary purpose is to prevent memory fragmentation.
 //!
 //! This is a **nightly-only** library (last rust nightly version tested: **1.25**).
 
@@ -51,10 +49,6 @@
 extern crate alloc;
 extern crate core;
 
-//____________________________________
-
-//____________________________________
-
 mod stack_allocator;
 mod double_buffered_allocator;
 mod double_ended_allocator;
@@ -70,16 +64,30 @@ mod pool_item;
 pub mod allocation_error;
 pub mod utils;
 
-pub use stack_allocator::StackAllocator;
-pub use stack_allocator_copy::StackAllocatorCopy;
+pub mod common {
+    pub use memory_chunk::MemoryChunk;
+    pub use memory_chunk::ChunkType;
+}
 
-pub use memory_chunk::MemoryChunk;
-pub use memory_chunk::ChunkType;
+pub mod stacks {
+    pub use stack_allocator::StackAllocator;
+    pub use stack_allocator_copy::StackAllocatorCopy;
 
-pub use double_buffered_allocator::DoubleBufferedAllocator;
-pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
+    pub use double_buffered_allocator::DoubleBufferedAllocator;
+    pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
 
-pub use double_ended_allocator::DoubleEndedStackAllocator;
-pub use double_ended_allocator_copy::DoubleEndedStackAllocatorCopy;
+    pub use double_ended_allocator::DoubleEndedStackAllocator;
+    pub use double_ended_allocator_copy::DoubleEndedStackAllocatorCopy;
+}
 
-pub use pool_allocator::PoolAllocator;
+pub mod pools {
+    pub use pool_allocator::PoolAllocator;
+    pub use pool_item::PoolItem;
+}
+
+pub mod smart_pointers {
+    pub use shared_ptr::SharedPtr;
+    pub use shared_ptr::WeakPtr;
+    pub use unique_ptr::UniquePtr;
+}
+

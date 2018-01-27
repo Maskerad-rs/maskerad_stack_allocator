@@ -8,7 +8,7 @@
 use memory_chunk::MemoryChunk;
 use std::mem;
 use core::ptr;
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref};
 
 use allocation_error::{AllocationError, AllocationResult};
 use utils;
@@ -61,10 +61,10 @@ impl StackAllocatorCopy {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_memory_allocators::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::stacks::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100);
-    /// assert_eq!(allocator.storage().borrow().capacity(), 100);
+    /// assert_eq!(allocator.storage().capacity(), 100);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         StackAllocatorCopy {
@@ -73,8 +73,8 @@ impl StackAllocatorCopy {
     }
 
     /// Returns an immutable reference to the memory chunk used by the allocator.
-    pub fn storage(&self) -> &RefCell<MemoryChunk> {
-        &self.storage
+    pub fn storage(&self) -> Ref<MemoryChunk> {
+        self.storage.borrow()
     }
 
     /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
@@ -84,7 +84,7 @@ impl StackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::stacks::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100);
     ///
@@ -127,7 +127,7 @@ impl StackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::stacks::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100);
     ///
@@ -166,7 +166,7 @@ impl StackAllocatorCopy {
     #[inline]
     fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
         //borrow mutably the memory chunk used by the allocator.
-        let copy_storage = self.storage.borrow_mut();
+        let copy_storage = self.storage();
 
         //Get the index of the first unused memory address in the memory chunk.
         let fill = copy_storage.fill();
@@ -196,12 +196,12 @@ impl StackAllocatorCopy {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::stacks::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100); //100 bytes
     ///
     /// //Get the raw pointer to the bottom of the allocator's memory chunk.
-    /// let start_allocator = allocator.storage().borrow().as_ptr();
+    /// let start_allocator = allocator.storage().as_ptr();
     ///
     /// //Get the index of the first unused memory address.
     /// let index_current_top = allocator.marker();
@@ -218,14 +218,14 @@ impl StackAllocatorCopy {
     ///
     /// ```
     pub fn marker(&self) -> usize {
-        self.storage.borrow_mut().fill()
+        self.storage().fill()
     }
 
     /// Reset the allocator completely.
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::stacks::StackAllocatorCopy;
     ///
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100); // 100 bytes.
@@ -249,14 +249,14 @@ impl StackAllocatorCopy {
     ///
     /// ```
     pub fn reset(&self) {
-            self.storage.borrow().set_fill(0);
+            self.storage().set_fill(0);
     }
 
     /// Reset partially the allocator, allocations will occur from the index given by the marker.
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::StackAllocatorCopy;
+    /// use maskerad_memory_allocators::stacks::StackAllocatorCopy;
     ///
     /// let allocator = StackAllocatorCopy::with_capacity(100); // 100 bytes.
     ///
@@ -286,7 +286,7 @@ impl StackAllocatorCopy {
     ///
     /// ```
     pub fn reset_to_marker(&self, marker: usize) {
-            self.storage.borrow().set_fill(marker);
+            self.storage().set_fill(marker);
     }
 }
 
@@ -299,8 +299,8 @@ mod stack_allocator_copy_test {
         unsafe {
             //create a StackAllocator with the specified size.
             let alloc = StackAllocatorCopy::with_capacity(200);
-            let start_chunk = alloc.storage.borrow().as_ptr();
-            let first_unused_mem_addr = start_chunk.offset(alloc.storage.borrow().fill() as isize);
+            let start_chunk = alloc.storage().as_ptr();
+            let first_unused_mem_addr = start_chunk.offset(alloc.storage().fill() as isize);
 
             assert_eq!(start_chunk, first_unused_mem_addr);
         }
@@ -320,7 +320,7 @@ mod stack_allocator_copy_test {
         let current_top_index = alloc.marker();
         //misaligned by 1 + size of 1 byte = 2.
         assert_eq!(current_top_index, 2);
-        assert_eq!(alloc.storage.borrow().capacity() - current_top_index, 198);
+        assert_eq!(alloc.storage().capacity() - current_top_index, 198);
 
 
 
@@ -330,7 +330,7 @@ mod stack_allocator_copy_test {
         let current_top_index = alloc.marker();
         //2 + misaligned by 2 + size of 4 byte = 8.
         assert_eq!(current_top_index, 8);
-        assert_eq!(alloc.storage.borrow().capacity() - current_top_index, 192);
+        assert_eq!(alloc.storage().capacity() - current_top_index, 192);
 
 
 
@@ -340,13 +340,13 @@ mod stack_allocator_copy_test {
         let current_top_index = alloc.marker();
         //8 + misaligned by 8 + size of 8 = 24
         assert_eq!(current_top_index, 24);
-        assert_eq!(alloc.storage.borrow().capacity() - current_top_index, 176);
+        assert_eq!(alloc.storage().capacity() - current_top_index, 176);
     }
 
     #[test]
     fn test_reset() {
         let alloc = StackAllocatorCopy::with_capacity(200);
-        let start_chunk = alloc.storage.borrow().as_ptr();
+        let start_chunk = alloc.storage().as_ptr();
 
         let index_current_top = alloc.marker();
         unsafe {
@@ -371,7 +371,7 @@ mod stack_allocator_copy_test {
 
         unsafe {
             let current_top = start_chunk.offset(index_current_top as isize);
-            let new_current_top = start_chunk.offset(alloc.storage.borrow().fill() as isize);
+            let new_current_top = start_chunk.offset(alloc.storage().fill() as isize);
             assert_ne!(current_top, new_current_top);
         }
 
@@ -379,7 +379,7 @@ mod stack_allocator_copy_test {
 
         unsafe {
             let current_top = start_chunk.offset(index_current_top as isize);
-            let new_current_top = start_chunk.offset(alloc.storage.borrow().fill() as isize);
+            let new_current_top = start_chunk.offset(alloc.storage().fill() as isize);
             assert_eq!(current_top, new_current_top);
         }
 
@@ -387,7 +387,7 @@ mod stack_allocator_copy_test {
 
         unsafe {
             let current_top = start_chunk.offset(index_current_top as isize);
-            let new_current_top = start_chunk.offset(alloc.storage.borrow().fill() as isize);
+            let new_current_top = start_chunk.offset(alloc.storage().fill() as isize);
             assert_ne!(current_top, new_current_top);
             assert_eq!(new_current_top, start_chunk);
         }

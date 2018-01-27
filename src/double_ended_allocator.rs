@@ -18,7 +18,7 @@
 
 
 use core::ptr;
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref};
 use std::mem;
 
 use allocation_error::{AllocationError, AllocationResult};
@@ -75,90 +75,22 @@ use memory_chunk::{ChunkType, MemoryChunk};
 /// # Example
 ///
 /// ```
-/// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-/// use maskerad_memory_allocators::ChunkType;
-/// use maskerad_memory_allocators::StackAllocator;
-///
-/// struct LevelConfig {
-///     data: u32,
-/// }
-///
-/// impl LevelConfig {
-///     pub fn new(data: u32) -> Self {
-///         LevelConfig {
-///             data,
-///         }
-///     }
-///
-///     pub fn data(&self) -> u32 {
-///         self.data
-///     }
-/// }
-///
-/// impl Drop for LevelConfig {
-///     fn drop(&mut self) {
-///         println!("LevelConfig dropped.");
-///     }
-/// }
-///
-/// struct Level {
-///     number: u32
-/// }
-///
-/// impl Level {
-///     pub fn from_config(config: &LevelConfig) -> Self {
-///         Level {
-///             number: config.data(),
-///         }
-///     }
-/// }
-///
-/// impl Drop for Level {
-///     fn drop(&mut self) {
-///         println!("Level dropped.");
-///     }
-/// }
+/// use maskerad_memory_allocators::stacks::DoubleEndedStackAllocator;
+/// use maskerad_memory_allocators::common::ChunkType;
 ///
 /// //50 bytes for each memory chunk.
-/// let double_ended_allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
-/// let allocator = StackAllocator::with_capacity(100);
+/// let double_ended_allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
 ///
 ///
-/// //we want to load data from a config file, in order to load a level, let's try with a standard stack allocator !
-///
-/// //Get a marker to the current top of the stack, we will reset later to drop the LevelConfig.
-/// let allocator_marker = allocator.marker();
-///
-/// let my_config = allocator.alloc(|| {
-///     LevelConfig::new(42)
+/// let my_vec: &Vec<u8> = double_ended_allocator.alloc(&ChunkType::TempData, || {
+///     Vec::with_capacity(10)
 /// }).unwrap();
 ///
-/// //Now create the level.
-/// let my_level = allocator.alloc(|| {
-///     Level::from_config(my_config)
-/// }).unwrap();
-///
-/// //We got our level, let's drop the config allocated in the allocator !
-/// allocator.reset_to_marker(allocator_marker);
-///
-/// // "Level dropped."
-/// // "LevelConfig dropped."
-///
-/// //Ouch... if we want to drop the LevelConfig, we must drop the Level too, since it is a stack.
-///
-///
-/// let my_config = double_ended_allocator.alloc(&ChunkType::TempData, || {
-///     LevelConfig::new(42)
-/// }).unwrap();
-///
-/// let my_level = double_ended_allocator.alloc(&ChunkType::ResidentData, || {
-///     Level::from_config(my_config)
+/// let my_vec_2: &Vec<u8> = double_ended_allocator.alloc(&ChunkType::ResidentData, || {
+///     Vec::with_capacity(10)
 /// }).unwrap();
 ///
 /// double_ended_allocator.reset(&ChunkType::TempData);
-/// // "LevelConfig dropped."
-///
-/// //That's the purpose of the double ended allocator.
 ///
 /// ```
 
@@ -174,11 +106,11 @@ impl DoubleEndedStackAllocator {
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::stacks::DoubleEndedStackAllocator;
     ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
-    /// assert_eq!(allocator.temp_storage().borrow().capacity(), 50);
-    /// assert_eq!(allocator.resident_storage().borrow().capacity(), 50);
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
+    /// assert_eq!(allocator.temp_storage().capacity(), 100);
+    /// assert_eq!(allocator.resident_storage().capacity(), 100);
     /// ```
     pub fn with_capacity(capacity_resident: usize, capacity_temporary: usize) -> Self {
         DoubleEndedStackAllocator {
@@ -187,14 +119,14 @@ impl DoubleEndedStackAllocator {
         }
     }
 
-    /// Returns an immutable reference to the memory chunk used for resident allocation.
-    pub fn resident_storage(&self) -> &RefCell<MemoryChunk> {
-        &self.storage_resident
+    /// Returns a borrowed reference to the memory chunk used for resident allocation.
+    pub fn resident_storage(&self) -> Ref<MemoryChunk> {
+        self.storage_resident.borrow()
     }
 
-    /// Returns an immutable reference to the memory chunk used for temporary allocation.
-    pub fn temp_storage(&self) -> &RefCell<MemoryChunk> {
-        &self.storage_temp
+    /// Returns a borrowed reference to the memory chunk used for temporary allocation.
+    pub fn temp_storage(&self) -> Ref<MemoryChunk> {
+        self.storage_temp.borrow()
     }
 
     /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
@@ -204,41 +136,19 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    /// use maskerad_memory_allocators::ChunkType;
+    /// use maskerad_memory_allocators::stacks::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::common::ChunkType;
     ///
-    /// struct Monster {
-    ///     hp: u32,
-    ///     level: u32,
-    /// }
     ///
-    /// impl Default for Monster {
-    ///     fn default() -> Self {
-    ///         Monster {
-    ///         hp: 1,
-    ///         level: 1,
-    ///         }
-    ///     }
-    /// }
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
-    /// impl Drop for Monster {
-    ///     fn drop(&mut self) {
-    ///         println!("I'm dying !");
-    ///     }
-    /// }
-    ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
-    ///
-    /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
-    ///     Monster::default()
+    /// let my_vec: &mut Vec<u8> = allocator.alloc_mut(&ChunkType::TempData, || {
+    ///     Vec::with_capacity(10)
     /// }).unwrap();
     ///
-    /// let another_monster = allocator.alloc(&ChunkType::ResidentData, || {
-    ///     Monster::default()
-    /// }).unwrap();
+    /// my_vec.push(1);
     ///
-    /// assert_eq!(my_monster.level, 1);
-    /// assert_eq!(another_monster.hp, 1);
+    /// assert!(!my_vec.is_empty());
     /// ```
     #[inline]
     pub fn alloc_mut<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
@@ -290,41 +200,16 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    /// use maskerad_memory_allocators::ChunkType;
+    /// use maskerad_memory_allocators::stacks::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::common::ChunkType;
     ///
-    /// struct Monster {
-    ///     hp: u32,
-    ///     level: u32,
-    /// }
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
-    /// impl Default for Monster {
-    ///     fn default() -> Self {
-    ///         Monster {
-    ///         hp: 1,
-    ///         level: 1,
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// impl Drop for Monster {
-    ///     fn drop(&mut self) {
-    ///         println!("I'm dying !");
-    ///     }
-    /// }
-    ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50);
-    ///
-    /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
-    ///     Monster::default()
+    /// let my_vec: &Vec<u8> = allocator.alloc(&ChunkType::TempData, || {
+    ///     Vec::with_capacity(10)
     /// }).unwrap();
     ///
-    /// let another_monster = allocator.alloc(&ChunkType::ResidentData, || {
-    ///     Monster::default()
-    /// }).unwrap();
-    ///
-    /// assert_eq!(my_monster.level, 1);
-    /// assert_eq!(another_monster.hp, 1);
+    /// assert!(my_vec.is_empty());
     /// ```
     #[inline]
     pub fn alloc<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&T>
@@ -481,13 +366,13 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    /// use maskerad_memory_allocators::ChunkType;
+    /// use maskerad_memory_allocators::stacks::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::common::ChunkType;
     ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50); //50 bytes for each memory chunk.
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100); //100 bytes for each memory chunk.
     ///
     /// //Get the raw pointer to the bottom of the memory chunk used for temp data.
-    /// let start_allocator_temp = allocator.temp_storage().borrow().as_ptr();
+    /// let start_allocator_temp = allocator.temp_storage().as_ptr();
     ///
     /// //Get the index of the first unused memory address in the memory chunk used for temp data.
     /// let index_temp = allocator.marker(&ChunkType::TempData);
@@ -518,68 +403,29 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    /// use maskerad_memory_allocators::ChunkType;
+    /// use maskerad_memory_allocators::stacks::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::common::ChunkType;
     ///
-    /// struct Monster {
-    ///     _hp :u32,
-    /// }
     ///
-    /// impl Default for Monster {
-    ///     fn default() -> Self {
-    ///         Monster {
-    ///         _hp: 1,
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// impl Drop for Monster {
-    ///     fn drop(&mut self) {
-    ///         println!("Monster is dying !");
-    ///     }
-    /// }
-    ///
-    /// struct Dragon {
-    ///     _level: u8,
-    /// }
-    ///
-    /// impl Default for Dragon {
-    ///     fn default() -> Self {
-    ///         Dragon {
-    ///             _level: 1,
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// impl Drop for Dragon {
-    ///     fn drop(&mut self) {
-    ///         println!("Dragon is dying !");
-    ///     }
-    /// }
-    ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50); // 50 bytes for each memory chunk.
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100); // 100 bytes for each memory chunk.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
     /// assert_eq!(allocator.marker(&ChunkType::ResidentData), 0);
     ///
-    /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
-    ///     Monster::default()
+    /// let my_vec: &Vec<u8> = allocator.alloc(&ChunkType::TempData, || {
+    ///     Vec::with_capacity(10)
     /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(&ChunkType::TempData), 0);
     ///
-    /// let my_dragon = allocator.alloc(&ChunkType::TempData, || {
-    ///     Dragon::default()
+    /// let my_vec_2: &Vec<u8> = allocator.alloc(&ChunkType::TempData, || {
+    ///     Vec::with_capacity(10)
     /// }).unwrap();
     ///
     /// allocator.reset(&ChunkType::TempData);
     ///
     /// //The memory chunk for temp data has been totally reset, and all its content has been dropped.
-    ///
-    /// //"Dragon is dying!".
-    /// //"Monster is dying!".
-    ///
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
     ///
     /// ```
@@ -587,12 +433,12 @@ impl DoubleEndedStackAllocator {
         unsafe {
             match chunk {
                 &ChunkType::ResidentData => {
-                    self.storage_resident.borrow().destroy();
-                    self.storage_resident.borrow().set_fill(0);
+                    self.resident_storage().destroy();
+                    self.resident_storage().set_fill(0);
                 },
                 &ChunkType::TempData => {
-                    self.storage_temp.borrow().destroy();
-                    self.storage_temp.borrow().set_fill(0);
+                    self.temp_storage().destroy();
+                    self.temp_storage().set_fill(0);
                 },
             }
         }
@@ -605,60 +451,25 @@ impl DoubleEndedStackAllocator {
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    /// use maskerad_memory_allocators::ChunkType;
+    /// use maskerad_memory_allocators::stacks::DoubleEndedStackAllocator;
+    /// use maskerad_memory_allocators::common::ChunkType;
     ///
-    /// struct Monster {
-    ///     _hp :u32,
-    /// }
     ///
-    /// impl Default for Monster {
-    ///     fn default() -> Self {
-    ///         Monster {
-    ///         _hp: 1,
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// impl Drop for Monster {
-    ///     fn drop(&mut self) {
-    ///         println!("Monster is dying !");
-    ///     }
-    /// }
-    ///
-    /// struct Dragon {
-    ///     _level: u8,
-    /// }
-    ///
-    /// impl Default for Dragon {
-    ///     fn default() -> Self {
-    ///         Dragon {
-    ///             _level: 1,
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// impl Drop for Dragon {
-    ///     fn drop(&mut self) {
-    ///         println!("Dragon is dying !");
-    ///     }
-    /// }
-    ///
-    /// let allocator = DoubleEndedStackAllocator::with_capacity(50, 50); // 50 bytes for each memory chunk.
+    /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100); // 100 bytes for each memory chunk.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
     ///
-    /// let my_monster = allocator.alloc(&ChunkType::TempData, || {
-    ///     Monster::default()
+    /// let my_vec: &Vec<u8> = allocator.alloc(&ChunkType::TempData, || {
+    ///     Vec::with_capacity(10)
     /// }).unwrap();
     ///
     /// //After the monster allocation, get the index of the first unused memory address in the memory chunk used for temp data.
     /// let index_current_temp = allocator.marker(&ChunkType::TempData);
     /// assert_ne!(index_current_temp, 0);
     ///
-    /// let my_dragon = allocator.alloc(&ChunkType::TempData, || {
-    ///     Dragon::default()
+    /// let my_vec_2: &Vec<u8> = allocator.alloc(&ChunkType::TempData, || {
+    ///     Vec::with_capacity(10)
     /// }).unwrap();
     ///
     /// assert_ne!(allocator.marker(&ChunkType::TempData), index_current_temp);
@@ -668,7 +479,6 @@ impl DoubleEndedStackAllocator {
     /// //The allocator has been partially reset, and all the content lying between the marker and
     /// //the first unused memory address has been dropped.
     ///
-    /// //"Dragon is dying!".
     ///
     /// assert_eq!(allocator.marker(&ChunkType::TempData), index_current_temp);
     ///
@@ -677,12 +487,12 @@ impl DoubleEndedStackAllocator {
         unsafe {
             match chunk {
                 &ChunkType::ResidentData => {
-                    self.storage_resident.borrow().destroy_to_marker(marker);
-                    self.storage_resident.borrow().set_fill(marker);
+                    self.resident_storage().destroy_to_marker(marker);
+                    self.resident_storage().set_fill(marker);
                 },
                 &ChunkType::TempData => {
-                    self.storage_temp.borrow().destroy_to_marker(marker);
-                    self.storage_temp.borrow().set_fill(marker);
+                    self.temp_storage().destroy_to_marker(marker);
+                    self.temp_storage().set_fill(marker);
                 },
             }
         }
@@ -692,8 +502,8 @@ impl DoubleEndedStackAllocator {
 impl Drop for DoubleEndedStackAllocator {
     fn drop(&mut self) {
         unsafe {
-            self.storage_temp.borrow().destroy();
-            self.storage_resident.borrow().destroy();
+            self.temp_storage().destroy();
+            self.resident_storage().destroy();
         }
     }
 }
@@ -736,10 +546,10 @@ mod double_ended_stack_allocator_test {
         unsafe {
             //create a StackAllocator with the specified size.
             let alloc = DoubleEndedStackAllocator::with_capacity(100, 100);
-            let start_chunk_temp = alloc.storage_temp.borrow().as_ptr();
-            let start_chunk_resident = alloc.storage_resident.borrow().as_ptr();
-            let first_unused_mem_addr_temp = start_chunk_temp.offset(alloc.storage_temp.borrow().fill() as isize);
-            let first_unused_mem_addr_resident = start_chunk_resident.offset(alloc.storage_resident.borrow().fill() as isize);
+            let start_chunk_temp = alloc.temp_storage().as_ptr();
+            let start_chunk_resident = alloc.resident_storage().as_ptr();
+            let first_unused_mem_addr_temp = start_chunk_temp.offset(alloc.temp_storage().fill() as isize);
+            let first_unused_mem_addr_resident = start_chunk_resident.offset(alloc.resident_storage().fill() as isize);
 
             assert_eq!(start_chunk_temp, first_unused_mem_addr_temp);
             assert_eq!(start_chunk_resident, first_unused_mem_addr_resident);
@@ -752,8 +562,8 @@ mod double_ended_stack_allocator_test {
         //We allocate 200 bytes of memory.
         let alloc = DoubleEndedStackAllocator::with_capacity(100, 100);
 
-        let start_alloc_temp = alloc.storage_temp.borrow().as_ptr();
-        let start_alloc_resident = alloc.storage_resident.borrow().as_ptr();
+        let start_alloc_temp = alloc.temp_storage().as_ptr();
+        let start_alloc_resident = alloc.resident_storage().as_ptr();
 
         let _my_monster = alloc.alloc(&ChunkType::TempData, || {
             Monster::new(1)
@@ -788,8 +598,8 @@ mod double_ended_stack_allocator_test {
 
         let top_stack_index_temp = alloc.marker(&ChunkType::TempData);
 
-        let start_alloc_temp = alloc.storage_temp.borrow().as_ptr();
-        let start_alloc_resident = alloc.storage_resident.borrow().as_ptr();
+        let start_alloc_temp = alloc.temp_storage().as_ptr();
+        let start_alloc_resident = alloc.resident_storage().as_ptr();
 
         let _my_monster = alloc.alloc(&ChunkType::TempData, || {
             Monster::new(1)
