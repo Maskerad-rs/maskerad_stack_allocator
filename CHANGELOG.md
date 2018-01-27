@@ -80,3 +80,6 @@ Box, Rc and Weak.
 All smart pointers uses the NonNull<T> (The new name of Shared<T>) struct as a backend now, instead
 of Shared<T> for WeakPtr and SharedPtr, and Unique<T> for UniquePtr. 
 
+#### version 3.1.2
+
+Forgot to update the documentation. Fixed.
