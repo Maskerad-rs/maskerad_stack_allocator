@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use stack_allocator::StackAllocator;
+use stacks::stack_allocator::StackAllocator;
 use allocation_error::{AllocationResult};
 
 /// A double-buffered allocator for data implementing the Drop trait.
@@ -55,9 +55,9 @@ impl DoubleBufferedAllocator {
     /// assert_eq!(allocator.active_buffer().storage().capacity(), 100);
     /// assert_eq!(allocator.inactive_buffer().storage().capacity(), 100);
     /// ```
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
         DoubleBufferedAllocator {
-            buffers: [StackAllocator::with_capacity(capacity), StackAllocator::with_capacity(capacity)],
+            buffers: [StackAllocator::with_capacity(capacity, capacity_copy), StackAllocator::with_capacity(capacity, capacity_copy)],
             current: false,
         }
     }
@@ -70,7 +70,7 @@ impl DoubleBufferedAllocator {
     pub fn alloc_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.buffers[self.current as usize].alloc_mut(op)
+        self.active_buffer().alloc_mut(op)
     }
 
     /// Allocates data in the active buffer, returning an immutable reference to the allocated data.
@@ -80,12 +80,16 @@ impl DoubleBufferedAllocator {
     ///
     pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
         where F: FnOnce() -> T {
-        self.buffers[self.current as usize].alloc(op)
+        self.active_buffer().alloc(op)
     }
 
     /// Resets completely the active buffer, dropping all its content.
     pub fn reset(&self) {
-        self.buffers[self.current as usize].reset();
+        self.active_buffer().reset();
+    }
+
+    pub fn reset_copy(&self) {
+        self.active_buffer().reset_copy();
     }
 
     pub fn active_buffer(&self) -> &StackAllocator {
@@ -99,12 +103,20 @@ impl DoubleBufferedAllocator {
     /// Resets partially the active buffer, dropping all the content lying between the marker
     /// and the first unused memory address.
     pub fn reset_to_marker(&self, marker: usize) {
-         self.buffers[self.current as usize].reset_to_marker(marker);
+         self.active_buffer().reset_to_marker(marker);
+    }
+
+    pub fn reset_to_marker_copy(&self, marker: usize) {
+        self.active_buffer().reset_to_marker_copy(marker)
     }
 
     /// Returns the index of the first unused memory address in the active buffer.
     pub fn marker(&self) -> usize {
-        self.buffers[self.current as usize].marker()
+        self.active_buffer().marker()
+    }
+
+    pub fn marker_copy(&self) -> usize {
+        self.active_buffer().marker_copy()
     }
 
     /// Swap the buffers. The inactive one becomes the active.

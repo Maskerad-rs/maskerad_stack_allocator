@@ -5,15 +5,14 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use pool_item::PoolItem;
 use std::cell::{RefCell, Cell};
 use std::mem;
 use std::ptr;
 use utils;
 use allocation_error::{AllocationResult, AllocationError};
-use unique_ptr::UniquePtr;
-use shared_ptr::{SharedUnique, SharedPtr, WeakPtr};
-use std::sync::Arc;
+use smart_pointers::unique_ptr::UniquePtr;
+use smart_pointers::shared_ptr::{SharedUnique, SharedPtr};
+use pools::pool_item::PoolItem;
 
 pub struct PoolAllocator {
     storage: Vec<RefCell<PoolItem>>,

@@ -14,7 +14,7 @@ use std::hash::{Hash, Hasher};
 use std::fmt;
 use std::intrinsics::abort;
 
-use pool_allocator::PoolAllocator;
+use pools::pool_allocator::PoolAllocator;
 
 pub struct SharedUnique<T: ?Sized> {
     pub strong: Cell<usize>,

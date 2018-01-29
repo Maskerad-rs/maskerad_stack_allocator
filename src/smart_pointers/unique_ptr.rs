@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use std::ptr::NonNull;
-use pool_allocator::PoolAllocator;
+use pools::pool_allocator::PoolAllocator;
 use std::hash::{Hasher, Hash};
 use std::cmp::Ordering;
 use std::ops::{DerefMut, Deref, CoerceUnsized};

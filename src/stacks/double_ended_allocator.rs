@@ -16,14 +16,8 @@
     - base our work on the work of people who actually know how to handle low-level stuff in Rust.
 */
 
-
-use core::ptr;
-use std::cell::{RefCell, Ref};
-use std::mem;
-
-use allocation_error::{AllocationError, AllocationResult};
-use utils;
-use memory_chunk::{ChunkType, MemoryChunk};
+use allocation_error::AllocationResult;
+use stacks::stack_allocator::StackAllocator;
 
 
 /// A double-ended allocator for data implementing the Drop trait.
@@ -95,9 +89,10 @@ use memory_chunk::{ChunkType, MemoryChunk};
 /// ```
 
 
+//TODO: 2 stack allocators, new() use 1 capacity and divide it by 2
 pub struct DoubleEndedStackAllocator {
-    storage_resident: RefCell<MemoryChunk>,
-    storage_temp: RefCell<MemoryChunk>,
+    stack_resident: StackAllocator,
+    stack_temp: StackAllocator,
 }
 
 
@@ -112,22 +107,24 @@ impl DoubleEndedStackAllocator {
     /// assert_eq!(allocator.temp_storage().capacity(), 100);
     /// assert_eq!(allocator.resident_storage().capacity(), 100);
     /// ```
-    pub fn with_capacity(capacity_resident: usize, capacity_temporary: usize) -> Self {
+    pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
         DoubleEndedStackAllocator {
-            storage_resident: RefCell::new(MemoryChunk::new(capacity_resident)),
-            storage_temp: RefCell::new(MemoryChunk::new(capacity_temporary)),
+            stack_resident: StackAllocator::with_capacity(capacity / 2, capacity_copy / 2),
+            stack_temp: StackAllocator::with_capacity(capacity / 2, capacity_copy / 2),
         }
     }
 
     /// Returns a borrowed reference to the memory chunk used for resident allocation.
-    pub fn resident_storage(&self) -> Ref<MemoryChunk> {
-        self.storage_resident.borrow()
+    pub fn stack_resident(&self) -> &StackAllocator {
+        &self.stack_resident
     }
 
     /// Returns a borrowed reference to the memory chunk used for temporary allocation.
-    pub fn temp_storage(&self) -> Ref<MemoryChunk> {
-        self.storage_temp.borrow()
+    pub fn stack_temp(&self) -> &StackAllocator {
+        &self.stack_temp
     }
+
+
 
     /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
     ///
@@ -151,47 +148,12 @@ impl DoubleEndedStackAllocator {
     /// assert!(!my_vec.is_empty());
     /// ```
     #[inline]
-    pub fn alloc_mut<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
+    pub fn alloc_mut_resident<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy_mut(chunk, op)
+        self.stack_resident().alloc_mut(op)
     }
 
-
-
-    //Functions for the non-copyable part of the arena.
-
-    /// The function actually writing data in the memory chunk
-    #[inline]
-    fn alloc_non_copy_mut<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&mut T>
-        where F: FnOnce() -> T
-    {
-        unsafe {
-            //Get the type description of the type T (get its vtable).
-            let type_description = utils::get_type_description::<T>();
-
-            //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
-            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>())?;
-
-            //Cast them.
-            let type_description_ptr = type_description_ptr as *mut usize;
-            let ptr = ptr as *mut T;
-
-            //write in our type description along with a bit indicating that the object has *not*
-            //been initialized yet.
-            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
-
-            //Initialize the object.
-            ptr::write(&mut (*ptr), op());
-
-            //Now that we are done, update the type description to indicate
-            //that the object is there.
-            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
-
-            //Return a mutable reference to the object.
-            Ok(&mut *ptr)
-        }
-    }
 
     /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
     ///
@@ -212,154 +174,22 @@ impl DoubleEndedStackAllocator {
     /// assert!(my_vec.is_empty());
     /// ```
     #[inline]
-    pub fn alloc<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&T>
+    pub fn alloc_resident<T, F>(&self, op: F) -> AllocationResult<&T>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy(chunk, op)
+        self.stack_resident().alloc(op)
     }
 
-
-
-    //Functions for the non-copyable part of the arena.
-
-    /// The function actually writing data in the memory chunk
-    #[inline]
-    fn alloc_non_copy<T, F>(&self, chunk: &ChunkType, op: F) -> AllocationResult<&T>
+    pub fn alloc_mut_temp<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        unsafe {
-            //Get the type description of the type T (get its vtable).
-            let type_description = utils::get_type_description::<T>();
-
-            //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
-            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(chunk, mem::size_of::<T>(), mem::align_of::<T>())?;
-
-            //Cast them.
-            let type_description_ptr = type_description_ptr as *mut usize;
-            let ptr = ptr as *mut T;
-
-            //write in our type description along with a bit indicating that the object has *not*
-            //been initialized yet.
-            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
-
-            //Initialize the object.
-            ptr::write(&mut (*ptr), op());
-
-            //Now that we are done, update the type description to indicate
-            //that the object is there.
-            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
-
-            //Return a mutable reference to the object.
-            Ok(&*ptr)
-        }
+        self.stack_temp().alloc_mut(op)
     }
 
-    /// The function asking the memory chunk to give us raw pointers to memory locations and update
-    /// the current top of the stack.
-    #[inline]
-    fn alloc_non_copy_inner(&self, chunk: &ChunkType, n_bytes: usize, align: usize) -> AllocationResult<(*const u8, *const u8)> {
-
-        match chunk {
-            &ChunkType::TempData => {
-                //mutably borrow the memory chunk.
-                let mut non_copy_temp_storage = self.storage_temp.borrow_mut();
-
-                //Get the index of the first unused byte in the memory chunk.
-                let fill = non_copy_temp_storage.fill();
-
-                //Get the index of where We'll write the type description data
-                //(the first unused byte in the memory chunk).
-                let mut type_description_start = fill;
-
-                // Get the index of where the object should reside (unaligned location actually).
-                let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
-
-                //With the index to the unaligned memory address, determine the index to
-                //the aligned memory address where the object will reside,
-                //according to its memory alignment.
-                let mut start = utils::round_up(after_type_description, align);
-
-                //Determine the index of the next aligned memory address for a type description, according the the size of the object
-                //and the memory alignment of a type description.
-                let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
-
-                if end >= non_copy_temp_storage.capacity() {
-                    return Err(AllocationError::OutOfMemoryError(format!("The temporary storage of the double ended allocator is out of memory !")));
-                }
-
-                //Update the current top of the stack.
-                //The first unused memory address is at index 'end',
-                //where the next type description would be written
-                //if an allocation was asked.
-                non_copy_temp_storage.set_fill(end);
-
-                unsafe {
-                    // Get a raw pointer to the start of our MemoryChunk's RawVec
-                    let start_storage = non_copy_temp_storage.as_ptr();
-
-                    Ok((
-                        //From this raw pointer, get the correct raw pointers with
-                        //the indexes we calculated earlier.
-
-                        //The raw pointer to the type description of the object.
-                        start_storage.offset(type_description_start as isize),
-
-                        //The raw pointer to the object.
-                        start_storage.offset(start as isize)
-                    ))
-                }
-            },
-            &ChunkType::ResidentData => {
-                //mutably borrow the memory chunk.
-                let mut non_copy_resident_storage = self.storage_resident.borrow_mut();
-
-                //Get the index of the first unused byte in the memory chunk.
-                let fill = non_copy_resident_storage.fill();
-
-                //Get the index of where We'll write the type description data
-                //(the first unused byte in the memory chunk).
-                let mut type_description_start = fill;
-
-                // Get the index of where the object should reside (unaligned location actually).
-                let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
-
-                //With the index to the unaligned memory address, determine the index to
-                //the aligned memory address where the object will reside,
-                //according to its memory alignment.
-                let mut start = utils::round_up(after_type_description, align);
-
-                //Determine the index of the next aligned memory address for a type description, according the the size of the object
-                //and the memory alignment of a type description.
-                let mut end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
-
-                if end >= non_copy_resident_storage.capacity() {
-                    return Err(AllocationError::OutOfMemoryError(format!("The resident storage of the double ended allocator is out of memory !")));
-                }
-
-                //Update the current top of the stack.
-                //The first unused memory address is at index 'end',
-                //where the next type description would be written
-                //if an allocation was asked.
-                non_copy_resident_storage.set_fill(end);
-
-                unsafe {
-                    // Get a raw pointer to the start of our MemoryChunk's RawVec
-                    let start_storage = non_copy_resident_storage.as_ptr();
-
-                    Ok((
-                        //From this raw pointer, get the correct raw pointers with
-                        //the indexes we calculated earlier.
-
-                        //The raw pointer to the type description of the object.
-                        start_storage.offset(type_description_start as isize),
-
-                        //The raw pointer to the object.
-                        start_storage.offset(start as isize)
-                    ))
-                }
-            },
-        }
-
+    pub fn alloc_temp<T, F>(&self, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        self.stack_temp().alloc(op)
     }
 
     /// Returns the index of the first unused memory address.
@@ -388,15 +218,20 @@ impl DoubleEndedStackAllocator {
     /// }
     ///
     /// ```
-    pub fn marker(&self, chunk: &ChunkType) -> usize {
-        match chunk {
-            &ChunkType::ResidentData => {
-                self.storage_resident.borrow_mut().fill()
-            },
-            &ChunkType::TempData => {
-                self.storage_temp.borrow_mut().fill()
-            },
-        }
+    pub fn marker_resident(&self) -> usize {
+        self.stack_resident().marker()
+    }
+
+    pub fn marker_resident_copy(&self) -> usize {
+        self.stack_resident().marker_copy()
+    }
+
+    pub fn marker_temp(&self) -> usize {
+        self.stack_temp().marker()
+    }
+
+    pub fn marker_temp_copy(&self) -> usize {
+        self.stack_temp().marker_copy()
     }
 
     /// Reset the allocator, dropping all the content residing inside it.
@@ -429,19 +264,20 @@ impl DoubleEndedStackAllocator {
     /// assert_eq!(allocator.marker(&ChunkType::TempData), 0);
     ///
     /// ```
-    pub fn reset(&self, chunk: &ChunkType) {
-        unsafe {
-            match chunk {
-                &ChunkType::ResidentData => {
-                    self.resident_storage().destroy();
-                    self.resident_storage().set_fill(0);
-                },
-                &ChunkType::TempData => {
-                    self.temp_storage().destroy();
-                    self.temp_storage().set_fill(0);
-                },
-            }
-        }
+    pub fn reset_resident(&self) {
+        self.stack_resident().reset()
+    }
+
+    pub fn reset_resident_copy(&self) {
+        self.stack_resident().reset_copy()
+    }
+
+    pub fn reset_temp(&self) {
+        self.stack_temp().reset()
+    }
+
+    pub fn reset_temp_copy(&self) {
+        self.stack_temp().reset_copy()
     }
 
 
@@ -483,30 +319,24 @@ impl DoubleEndedStackAllocator {
     /// assert_eq!(allocator.marker(&ChunkType::TempData), index_current_temp);
     ///
     /// ```
-    pub fn reset_to_marker(&self, chunk: &ChunkType, marker: usize) {
-        unsafe {
-            match chunk {
-                &ChunkType::ResidentData => {
-                    self.resident_storage().destroy_to_marker(marker);
-                    self.resident_storage().set_fill(marker);
-                },
-                &ChunkType::TempData => {
-                    self.temp_storage().destroy_to_marker(marker);
-                    self.temp_storage().set_fill(marker);
-                },
-            }
-        }
+    pub fn reset_to_marker_resident(&self, marker: usize) {
+        self.stack_resident().reset_to_marker(marker);
+    }
+
+    pub fn reset_to_marker_resident_copy(&self, marker: usize) {
+        self.stack_resident().reset_to_marker_copy(marker);
+    }
+
+    pub fn reset_to_marker_temp(&self, marker: usize) {
+        self.stack_temp().reset_to_marker(marker);
+    }
+
+    pub fn reset_to_marker_temp_copy(&self, marker: usize) {
+        self.stack_temp().reset_to_marker_copy(marker);
     }
 }
 
-impl Drop for DoubleEndedStackAllocator {
-    fn drop(&mut self) {
-        unsafe {
-            self.temp_storage().destroy();
-            self.resident_storage().destroy();
-        }
-    }
-}
+
 
 
 #[cfg(test)]

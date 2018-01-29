@@ -12,6 +12,7 @@ use std::mem;
 use allocation_error::{AllocationError, AllocationResult};
 use utils;
 use memory_chunk::MemoryChunk;
+use std::intrinsics::needs_drop;
 
 
 /// A stack-based allocator for data implementing the Drop trait.
@@ -79,6 +80,7 @@ use memory_chunk::MemoryChunk;
 
 pub struct StackAllocator {
     storage: RefCell<MemoryChunk>,
+    storage_copy: RefCell<MemoryChunk>,
 }
 
 
@@ -92,15 +94,21 @@ impl StackAllocator {
     /// let allocator = StackAllocator::with_capacity(100);
     /// assert_eq!(allocator.storage().capacity(), 100);
     /// ```
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
         StackAllocator {
             storage: RefCell::new(MemoryChunk::new(capacity)),
+            storage_copy: RefCell::new(MemoryChunk::new(capacity_copy)),
         }
     }
 
-    /// Returns a borrowed reference to the memory chunk used by the stack allocator.
+    /// Returns a borrowed reference to the memory chunk used for data implementing the `Drop` trait.
     pub fn storage(&self) -> Ref<MemoryChunk> {
         self.storage.borrow()
+    }
+
+    /// Returns a borrowed reference to the memory chunk used for data implementing the `Copy` trait.
+    pub fn storage_copy(&self) -> Ref<MemoryChunk> {
+        self.storage_copy.borrow()
     }
 
     /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
@@ -123,15 +131,16 @@ impl StackAllocator {
     pub fn alloc_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy_mut(op)
+        unsafe {
+            if needs_drop::<T>() {
+                self.alloc_non_copy_mut(op)
+            } else {
+                self.alloc_copy_mut(op)
+            }
+        }
     }
 
-
-
-    //Functions for the non-copyable part of the arena.
-
     /// The function actually writing data in the memory chunk
-    #[inline]
     fn alloc_non_copy_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
         where F: FnOnce() -> T
     {
@@ -162,6 +171,25 @@ impl StackAllocator {
         }
     }
 
+    //Functions for the copyable part of the stack allocator.
+    fn alloc_copy_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            //Get an aligned raw pointer to place the object in it.
+            let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
+
+            //cast this raw pointer to the type of the object.
+            let ptr = ptr as *mut T;
+
+            //Write the data in the memory location.
+            ptr::write(&mut (*ptr), op());
+
+            //return a mutable reference to this pointer.
+            Ok(&mut *ptr)
+        }
+    }
+
     /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
     ///
     /// # Error
@@ -182,7 +210,13 @@ impl StackAllocator {
     pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy(op)
+        unsafe {
+            if needs_drop::<T>() {
+                self.alloc_non_copy(op)
+            } else {
+                self.alloc_copy(op)
+            }
+        }
     }
 
 
@@ -217,6 +251,24 @@ impl StackAllocator {
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
             //Return a mutable reference to the object.
+            Ok(&*ptr)
+        }
+    }
+
+    fn alloc_copy<T, F>(&self, op: F) -> AllocationResult<&T>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            //Get an aligned raw pointer to place the object in it.
+            let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
+
+            //cast this raw pointer to the type of the object.
+            let ptr = ptr as *mut T;
+
+            //Write the data in the memory location.
+            ptr::write(&mut (*ptr), op());
+
+            //return a mutable reference to this pointer.
             Ok(&*ptr)
         }
     }
@@ -275,6 +327,34 @@ impl StackAllocator {
                 }
     }
 
+    fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
+        //borrow mutably the memory chunk used by the allocator.
+        let copy_storage = self.storage_copy();
+
+        //Get the index of the first unused memory address in the memory chunk.
+        let fill = copy_storage.fill();
+
+        //Get the index of the aligned memory address, which will be returned.
+        let start = utils::round_up(fill, align);
+
+        //Get the index of the future first unused memory address, according to the size of the object.
+        let end = start + n_bytes;
+
+        //We don't grow the capacity, or create another chunk.
+        if end >= copy_storage.capacity() {
+            return Err(AllocationError::OutOfMemoryError(format!("The copy stack allocator is out of memory !")));
+        }
+
+        //Set the first unused memory address of the memory chunk to the index calculated earlier.
+        copy_storage.set_fill(end);
+
+        unsafe {
+            //Return the raw pointer to the aligned memory location, which will be used to place
+            //the object in the allocator.
+            Ok(copy_storage.as_ptr().offset(start as isize))
+        }
+    }
+
     /// Returns the index of the first unused memory address.
     ///
     /// # Example
@@ -304,6 +384,10 @@ impl StackAllocator {
         self.storage().fill()
     }
 
+    pub fn marker_copy(&self) -> usize {
+        self.storage_copy().fill()
+    }
+
     /// Reset the allocator, dropping all the content residing inside it.
     ///
     /// # Example
@@ -331,6 +415,10 @@ impl StackAllocator {
             self.storage().destroy();
             self.storage().set_fill(0);
         }
+    }
+
+    pub fn reset_copy(&self) {
+            self.storage_copy().set_fill(0);
     }
 
     /// Reset partially the allocator, dropping all the content residing between the marker and
@@ -375,12 +463,24 @@ impl StackAllocator {
         }
     }
 
+    pub fn reset_to_marker_copy(&self, marker: usize) {
+            self.storage_copy().set_fill(marker);
+    }
+
     pub fn capacity(&self) -> usize {
         self.storage().capacity()
     }
 
+    pub fn capacity_copy(&self) -> usize {
+        self.storage_copy().capacity()
+    }
+
     pub fn storage_as_ptr(&self) -> *const u8 {
         self.storage().as_ptr()
+    }
+
+    pub fn storage_copy_as_ptr(&self) -> *const u8 {
+        self.storage_copy().as_ptr()
     }
 }
 

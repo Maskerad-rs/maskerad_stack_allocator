@@ -49,45 +49,12 @@
 extern crate alloc;
 extern crate core;
 
-mod stack_allocator;
-mod double_buffered_allocator;
-mod double_ended_allocator;
+mod stacks;
+mod smart_pointers;
+mod pools;
+
 mod memory_chunk;
-mod stack_allocator_copy;
-mod double_buffered_allocator_copy;
-mod double_ended_allocator_copy;
-mod shared_ptr;
-mod unique_ptr;
-mod pool_allocator;
-mod pool_item;
+mod allocation_error;
+mod utils;
 
-pub mod allocation_error;
-pub mod utils;
-
-pub mod common {
-    pub use memory_chunk::MemoryChunk;
-    pub use memory_chunk::ChunkType;
-}
-
-pub mod stacks {
-    pub use stack_allocator::StackAllocator;
-    pub use stack_allocator_copy::StackAllocatorCopy;
-
-    pub use double_buffered_allocator::DoubleBufferedAllocator;
-    pub use double_buffered_allocator_copy::DoubleBufferedAllocatorCopy;
-
-    pub use double_ended_allocator::DoubleEndedStackAllocator;
-    pub use double_ended_allocator_copy::DoubleEndedStackAllocatorCopy;
-}
-
-pub mod pools {
-    pub use pool_allocator::PoolAllocator;
-    pub use pool_item::PoolItem;
-}
-
-pub mod smart_pointers {
-    pub use shared_ptr::SharedPtr;
-    pub use shared_ptr::WeakPtr;
-    pub use unique_ptr::UniquePtr;
-}
 
