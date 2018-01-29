@@ -7,24 +7,11 @@
 
 //! This library provides:
 //!
-//! - a **stack-based** allocator for data implementing the **Drop** trait,
+//! - a **stack-based** allocator.
 //!
-//! - a **double-ended** allocator for data implementing the **Drop** trait,
+//! - a **double-ended** allocator.
 //!
-//! - a **double-buffered** allocator for data implementing the **Drop** trait,
-//!
-//!
-//! - a **stack-based** allocator for data implementing the **Copy** trait,
-//!
-//! - a **double-ended** allocator for data implementing the **Copy** trait,
-//!
-//! - a **double-buffered** allocator for data implementing the **Copy** trait,
-//!
-//!
-//! - a **single-threaded pool** allocator for data implementing the **Drop** trait,
-//!
-//! - **Unique**, **Weak** and **Shared** smart pointers used by the pool allocators, almost identical
-//! to `Box`, `Weak` and `Rc` smart pointers in implementation and purpose.
+//! - a **double-buffered** allocator.
 //!
 //! Its primary purpose is to prevent memory fragmentation.
 //!
@@ -33,18 +20,18 @@
 
 
 #![feature(alloc)]
-#![feature(offset_to)]
-#![feature(allocator_api)]
+//#![feature(offset_to)]
+//#![feature(allocator_api)]
 #![feature(raw)]
-#![feature(heap_api)]
+//#![feature(heap_api)]
 #![feature(core_intrinsics)]
-#![feature(shared)]
-#![feature(unique)]
-#![feature(i128_type)]
-#![feature(i128)]
-#![feature(optin_builtin_traits)]
-#![feature(coerce_unsized)]
-#![feature(unsize)]
+//#![feature(shared)]
+//#![feature(unique)]
+//#![feature(i128_type)]
+//#![feature(i128)]
+//#![feature(optin_builtin_traits)]
+//#![feature(coerce_unsized)]
+//#![feature(unsize)]
 
 extern crate alloc;
 extern crate core;
@@ -53,8 +40,11 @@ mod stacks;
 mod smart_pointers;
 mod pools;
 
-mod memory_chunk;
-mod allocation_error;
-mod utils;
+pub mod memory_chunk;
+pub mod allocation_error;
+pub mod utils;
 
+pub use stacks::stack_allocator::StackAllocator;
+pub use stacks::double_ended_allocator::DoubleEndedStackAllocator;
+pub use stacks::double_buffered_allocator::DoubleBufferedAllocator;
 

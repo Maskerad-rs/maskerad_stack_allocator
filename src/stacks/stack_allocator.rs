@@ -17,7 +17,7 @@ use std::intrinsics::needs_drop;
 
 /// A stack-based allocator for data implementing the Drop trait.
 ///
-/// It manages a **MemoryChunk** to:
+/// It manages two `MemoryChunk`s to:
 ///
 /// - Allocate bytes in a stack-like fashion.
 ///
@@ -25,43 +25,54 @@ use std::intrinsics::needs_drop;
 ///
 /// - Drop the content of the MemoryChunk when needed.
 ///
+/// One `MemoryChunk` is used for data implementing the `Drop` trait, the other is used for data implementing
+/// the `Copy` trait. A structure implementing the `Copy` trait cannot implement the `Drop` trait. In order to
+/// drop data implementing the `Drop` trait, we need to store its vtable next to it in memory.
+///
 /// # Instantiation
-/// When instantiated, the memory chunk pre-allocate the given number of bytes.
+/// When instantiated, the memory chunk pre-allocate the given number of bytes for each `MemoryChunk`.
 ///
 /// # Allocation
 /// When an object is allocated in memory, the allocator:
 ///
-/// - Asks a pointer to a memory address to its memory chunk,
+/// - Check if the allocated object needs to be dropped, and choose which `MemoryChunk` to use according to this information,
+///
+/// - Asks a pointer to a memory address to the corresponding memory chunk,
 ///
 /// - Place the object in this memory address,
 ///
 /// - Update the first unused memory address of the memory chunk according to an offset,
 ///
-/// - And return a mutable reference to the object which has been placed in the memory chunk.
+/// - And return an immutable/mutable reference to the object which has been placed in the memory chunk.
 ///
-/// This offset is calculated by the size of the object, the size of a TypeDescription structure, its memory-alignment and an offset to align the object in memory.
+/// This offset is calculated by the size of the object, the size of a TypeDescription structure (if the object implement the `Drop` trait),
+/// its memory-alignment and an offset to align the object in memory.
 ///
 /// # Roll-back
 ///
-/// This structure allows you to get a **marker**, the index to the first unused memory address of the memory chunk. A stack allocator can be *reset* to a marker,
-/// or reset entirely.
+/// This structure allows you to get a **marker**, the index to the first unused memory address of a memory chunk. A stack allocator can *reset* a memory chunk to a marker,
+/// or reset a memory chunk entirely.
 ///
-/// When the allocator is reset to a marker, the memory chunk will drop all the content lying between the marker and the first unused memory address,
-/// and set the first unused memory address to the marker.
+/// When a memory chunk is reset to a marker, it will:
+/// - Drop all the content lying between the marker and the first unused memory address, if it holds data implementing the `Drop` trait,
+/// - Set the first unused memory address to the marker.
 ///
-/// When the allocator is reset completely, the memory chunk will drop everything and set the first unused memory address to the bottom of its stack.
+/// When a memory chunk is reset completely, it will:
+/// - Drop everything, if ti holds data implementing the `Drop` trait,
+/// - Set the first unused memory address to the bottom of its stack.
 ///
 /// # Example
 ///
 /// ```
-/// use maskerad_memory_allocators::stacks::StackAllocator;
+/// use maskerad_memory_allocators::StackAllocator;
 ///
-/// let single_frame_allocator = StackAllocator::with_capacity(100); //100 bytes
+/// //100 bytes for data implementing Drop, 100 bytes for data implementing Copy.
+/// let single_frame_allocator = StackAllocator::with_capacity(100, 100);
 /// let mut closed = false;
 ///
 /// while !closed {
 ///     // The allocator is cleared every frame.
-///     // (Everything is dropped, and allocation occurs from the bottom of the stack).
+///     // Everything is dropped, and allocation occurs from the bottom of the stack.
 ///     single_frame_allocator.reset();
 ///
 ///     //...
@@ -76,8 +87,6 @@ use std::intrinsics::needs_drop;
 ///     closed = true;
 /// }
 /// ```
-
-
 pub struct StackAllocator {
     storage: RefCell<MemoryChunk>,
     storage_copy: RefCell<MemoryChunk>,
@@ -85,14 +94,18 @@ pub struct StackAllocator {
 
 
 impl StackAllocator {
-    /// Creates a StackAllocator with the given capacity, in bytes.
+    /// Creates a StackAllocator with the given capacities, in bytes.
+    ///
+    /// The first capacity is for the `MemoryChunk` holding data implementing the `Drop` trait,
+    /// the second is for the `MemoryChunk` holding data implementing the `Copy` trait.
     /// # Example
     /// ```
     /// #![feature(alloc)]
-    /// use maskerad_memory_allocators::stacks::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
-    /// let allocator = StackAllocator::with_capacity(100);
+    /// let allocator = StackAllocator::with_capacity(100, 50);
     /// assert_eq!(allocator.storage().capacity(), 100);
+    /// assert_eq!(allocator.storage_copy().capacity(), 50);
     /// ```
     pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
         StackAllocator {
@@ -113,14 +126,17 @@ impl StackAllocator {
 
     /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
     ///
+    /// If the allocated data implements `Drop`, it will be placed in the `MemoryChunk` storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other `MemoryChunk`.
+    ///
     /// # Error
     /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::stacks::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
-    /// let allocator = StackAllocator::with_capacity(100);
+    /// let allocator = StackAllocator::with_capacity(100, 100);
     ///
     /// let my_i32 = allocator.alloc_mut(|| {
     ///     26 as i32
@@ -192,19 +208,22 @@ impl StackAllocator {
 
     /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
     ///
+    /// If the allocated data implements `Drop`, it will be placed in the `MemoryChunk` storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other `MemoryChunk`.
+    ///
     /// # Error
     /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::stacks::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
-    /// let allocator = StackAllocator::with_capacity(100);
+    /// let allocator = StackAllocator::with_capacity(100, 100);
     ///
     /// let my_i32 = allocator.alloc(|| {
     ///     26 as i32
     /// }).unwrap();
-    /// assert_eq!(my_i32, &mut 26);
+    /// assert_eq!(my_i32, &26);
     /// ```
     #[inline]
     pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
@@ -355,13 +374,14 @@ impl StackAllocator {
         }
     }
 
-    /// Returns the index of the first unused memory address.
+    /// Returns the index of the first unused memory address of the `MemoryChunk` storing data implementing
+    /// the `Drop` trait.
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::stacks::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
-    /// let allocator = StackAllocator::with_capacity(100); //100 bytes
+    /// let allocator = StackAllocator::with_capacity(100, 100); //100 bytes
     ///
     /// //Get the raw pointer to the bottom of the allocator's memory chunk.
     /// let start_allocator = allocator.storage().as_ptr();
@@ -384,17 +404,43 @@ impl StackAllocator {
         self.storage().fill()
     }
 
+    /// Returns the index of the first unused memory address of the `MemoryChunk` storing data implementing
+    /// the `Copy` trait.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100, 100); //100 bytes
+    ///
+    /// //Get the raw pointer to the bottom of the allocator's memory chunk.
+    /// let start_allocator = allocator.storage_copy().as_ptr();
+    ///
+    /// //Get the index of the first unused memory address.
+    /// let index_current_top = allocator.marker_copy();
+    ///
+    /// //Calling offset() on a raw pointer is an unsafe operation.
+    /// unsafe {
+    ///     //Get the raw pointer, with the index.
+    ///     let current_top = start_allocator.offset(index_current_top as isize);
+    ///
+    ///     //Nothing has been allocated in the allocator,
+    ///     //the top of the stack is the bottom of the allocator's memory chunk.
+    ///     assert_eq!(current_top, start_allocator);
+    /// }
+    ///
+    /// ```
     pub fn marker_copy(&self) -> usize {
         self.storage_copy().fill()
     }
 
-    /// Reset the allocator, dropping all the content residing inside it.
+    /// Reset the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing inside it.
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::stacks::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
-    /// let allocator = StackAllocator::with_capacity(100); // 100 bytes.
+    /// let allocator = StackAllocator::with_capacity(100, 100); // 100 bytes.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(), 0);
@@ -406,7 +452,7 @@ impl StackAllocator {
     ///
     /// allocator.reset();
     ///
-    /// //The allocator has been totally reset, and all its content has been dropped.
+    /// //The MemoryChunk storing data implementing the `Drop` trait has been totally reset, and all its content has been dropped.
     /// assert_eq!(allocator.marker(), 0);
     ///
     /// ```
@@ -417,18 +463,41 @@ impl StackAllocator {
         }
     }
 
+    /// Reset the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing inside it.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::StackAllocator;
+    ///
+    /// let allocator = StackAllocator::with_capacity(100, 100); // 100 bytes.
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker_copy(), 0);
+    ///
+    /// let my_i32 = allocator.alloc(|| {
+    ///     8 as i32
+    /// }).unwrap();
+    /// assert_ne!(allocator.marker_copy(), 0);
+    ///
+    /// allocator.reset_copy();
+    ///
+    /// //The MemoryChunk storing data implementing the `Copy` has been totally reset.
+    /// assert_eq!(allocator.marker_copy(), 0);
+    ///
+    /// ```
     pub fn reset_copy(&self) {
             self.storage_copy().set_fill(0);
     }
 
-    /// Reset partially the allocator, dropping all the content residing between the marker and
-    /// the first unused memory address of the allocator.
+    /// Reset partially the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing between the marker and
+    /// the first unused memory address of the `MemoryChunk`.
     ///
     /// # Example
     /// ```
-    /// use maskerad_memory_allocators::stacks::StackAllocator;
+    /// use maskerad_memory_allocators::StackAllocator;
     ///
-    /// let allocator = StackAllocator::with_capacity(100); // 100 bytes.
+    /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
+    /// let allocator = StackAllocator::with_capacity(100, 100);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
     /// assert_eq!(allocator.marker(), 0);
@@ -437,7 +506,7 @@ impl StackAllocator {
     ///     Vec::with_capacity(10)
     /// }).unwrap();
     ///
-    /// //After the monster allocation, get the index of the first unused memory address in the allocator.
+    /// //After the allocation, get the index of the first unused memory address in the allocator.
     /// let index_current_top = allocator.marker();
     /// assert_ne!(index_current_top, 0);
     ///
@@ -449,9 +518,8 @@ impl StackAllocator {
     ///
     /// allocator.reset_to_marker(index_current_top);
     ///
-    /// //The allocator has been partially reset, and all the content lying between the marker and
+    /// //The memorychunk storing data implementing the Drop trait has been partially reset, and all the content lying between the marker and
     /// //the first unused memory address has been dropped.
-    /// //my_dragon has printed "Dragon is dying!".
     ///
     /// assert_eq!(allocator.marker(), index_current_top);
     ///
@@ -463,22 +531,59 @@ impl StackAllocator {
         }
     }
 
+    /// Reset partially the `MemoryChunk` storing data implementing the `Copy` trait.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::StackAllocator;
+    ///
+    /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
+    /// let allocator = StackAllocator::with_capacity(100, 100);
+    ///
+    /// //When nothing has been allocated, the first unused memory address is at index 0.
+    /// assert_eq!(allocator.marker_copy(), 0);
+    ///
+    /// let my_i32 = allocator.alloc(|| {
+    ///     8 as i32
+    /// }).unwrap();
+    ///
+    /// //After the allocation, get the index of the first unused memory address in the allocator.
+    /// let index_current_top = allocator.marker_copy();
+    /// assert_ne!(index_current_top, 0);
+    ///
+    /// let my_i32_2 = allocator.alloc(|| {
+    ///     9 as i32
+    /// }).unwrap();
+    ///
+    /// assert_ne!(allocator.marker_copy(), index_current_top);
+    ///
+    /// allocator.reset_to_marker_copy(index_current_top);
+    ///
+    /// //The memorychunk storing data implementing the Copy trait has been partially reset.
+    ///
+    /// assert_eq!(allocator.marker_copy(), index_current_top);
+    ///
+    /// ```
     pub fn reset_to_marker_copy(&self, marker: usize) {
             self.storage_copy().set_fill(marker);
     }
 
+    /// Returns the maximum capacity the `MemoryChunk` storing data implementing the `Drop` trait can hold.
     pub fn capacity(&self) -> usize {
         self.storage().capacity()
     }
 
+    /// Returns the maximum capacity the `MemoryChunk` storing data implementing the `Copy` trait can hold.
     pub fn capacity_copy(&self) -> usize {
         self.storage_copy().capacity()
     }
 
+    /// Returns a raw pointer to the start of the memory storage used by the `MemoryChunk` storing data implementing the `Drop` trait.
     pub fn storage_as_ptr(&self) -> *const u8 {
         self.storage().as_ptr()
     }
 
+    /// Returns a raw pointer to the start of the memory storage used by the `MemoryChunk` storing data implementing the `Copy` trait.
     pub fn storage_copy_as_ptr(&self) -> *const u8 {
         self.storage_copy().as_ptr()
     }
@@ -527,7 +632,7 @@ mod stack_allocator_test {
     fn creation_with_right_capacity() {
         unsafe {
             //create a StackAllocator with the specified size.
-            let alloc = StackAllocator::with_capacity(200);
+            let alloc = StackAllocator::with_capacity(200, 200);
             let start_chunk = alloc.storage_as_ptr();
             let first_unused_mem_addr = start_chunk.offset(alloc.storage().fill() as isize);
 
@@ -538,7 +643,7 @@ mod stack_allocator_test {
     #[test]
     fn allocation_test() {
         //We allocate 200 bytes of memory.
-        let alloc = StackAllocator::with_capacity(200);
+        let alloc = StackAllocator::with_capacity(200, 200);
 
         let _my_monster = alloc.alloc(|| {
             Monster::new(1)
@@ -555,7 +660,7 @@ mod stack_allocator_test {
     //Use 'cargo test -- --nocapture' to see the monsters' println!s
     #[test]
     fn test_reset() {
-        let alloc = StackAllocator::with_capacity(200);
+        let alloc = StackAllocator::with_capacity(200, 200);
         let _my_monster = alloc.alloc(|| {
             Monster::new(1)
         }).unwrap();

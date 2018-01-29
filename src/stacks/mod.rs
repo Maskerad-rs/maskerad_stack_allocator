@@ -5,6 +5,6 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-mod double_buffered_allocator;
-mod double_ended_allocator;
-mod stack_allocator;
+pub mod double_buffered_allocator;
+pub mod double_ended_allocator;
+pub mod stack_allocator;

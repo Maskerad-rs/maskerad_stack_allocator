@@ -5,6 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+/*
+
 use std::ptr::NonNull;
 use pools::pool_allocator::PoolAllocator;
 use std::hash::{Hasher, Hash};
@@ -14,7 +16,6 @@ use std::borrow;
 use std::fmt;
 use std::marker::Unsize;
 
-//TODO: ?Sized ? tester dans les unit tests avec un trait object.
 /// A pointer type for allocation in memory pools.
 ///
 /// `UniquePtr<T>` is basically a `Box<T>`. It provides unique ownership to a value from a pool,
@@ -23,18 +24,20 @@ pub struct UniquePtr<'a, T: ?Sized> {
     ptr: NonNull<T>,
     pool: &'a PoolAllocator,
     chunk_index: usize,
+    should_drop: bool, //This is lame.
 }
 
 impl<'a, T: ?Sized> UniquePtr<'a, T> {
-    pub unsafe fn from_raw(raw: *mut T, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
-        UniquePtr::from_nonnull(NonNull::new_unchecked(raw), pool, chunk_index)
+    pub unsafe fn from_raw(raw: *mut T, pool: &'a PoolAllocator, chunk_index: usize, should_drop: bool) -> Self {
+        UniquePtr::from_nonnull(NonNull::new_unchecked(raw), pool, chunk_index, should_drop)
     }
 
-    pub unsafe fn from_nonnull(ptr: NonNull<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
+    pub unsafe fn from_nonnull(ptr: NonNull<T>, pool: &'a PoolAllocator, chunk_index: usize, should_drop: bool) -> Self {
         UniquePtr {
             ptr,
             pool,
             chunk_index,
+            should_drop,
         }
     }
 
@@ -43,32 +46,49 @@ impl<'a, T: ?Sized> UniquePtr<'a, T> {
 
 impl<'a, T: ?Sized> Drop for UniquePtr<'a, T> {
     fn drop(&mut self) {
+        if self.should_drop {
+            //Get the current index of the first available pool item in the pool allocator.
+            let current_first_available = self.pool.first_available();
 
-        //Get the current index of the first available pool item in the pool allocator.
-        let current_first_available = self.pool.first_available();
+            //Get the pool item, where the data inside the UniquePtr reside.
+            let mut pool_item = self.pool.storage().get(self.chunk_index).unwrap().borrow_mut();
 
-        //Get the pool item, where the data inside the UniquePtr reside.
-        let mut pool_item = self.pool.storage().get(self.chunk_index).unwrap().borrow_mut();
+            //Modify the index to the next free pool item. The old first available pool item
+            //is now "linked" to this pool item, which is now the nex first available pool item.
+            pool_item.set_next(current_first_available);
 
-        //Modify the index to the next free pool item. The old first available pool item
-        //is now "linked" to this pool item, which is now the nex first available pool item.
-        pool_item.set_next(current_first_available);
-
-        //This pool item becomes the first available pool item in the pool allocator.
-        self.pool.set_first_available(Some(self.chunk_index));
+            //This pool item becomes the first available pool item in the pool allocator.
+            self.pool.set_first_available(Some(self.chunk_index));
 
 
-        unsafe {
-            //drop the data inside the pool item's memory chunk.
-            pool_item.memory_chunk().destroy();
-            //Set the index of the first unused byte in the memory chunk to 0.
-            pool_item.memory_chunk().set_fill(0);
+            unsafe {
+                //drop the data inside the pool item's memory chunk.
+                pool_item.memory_chunk().destroy();
+                //Set the index of the first unused byte in the memory chunk to 0.
+                pool_item.memory_chunk().set_fill(0);
+            }
+        } else {
+            //Get the current index of the first available pool item in the pool allocator.
+            let current_first_available = self.pool.first_available_copy();
+
+            //Get the pool item, where the data inside the UniquePtr reside.
+            let mut pool_item = self.pool.storage_copy().get(self.chunk_index).unwrap().borrow_mut();
+
+            //Modify the index to the next free pool item. The old first available pool item
+            //is now "linked" to this pool item, which is now the nex first available pool item.
+            pool_item.set_next(current_first_available);
+
+            //This pool item becomes the first available pool item in the pool allocator.
+            self.pool.set_first_available_copy(Some(self.chunk_index));
+
+            unsafe {
+                //Set the index of the first unused byte in the memory chunk to 0.
+                pool_item.memory_chunk().set_fill(0);
+            }
         }
-
     }
 }
 
-//TODO: hm....
 impl<'a, T: Clone> Clone for UniquePtr<'a, T> {
     fn clone(&self) -> UniquePtr<'a, T> {
         self.pool.alloc_unique(|| {
@@ -241,3 +261,5 @@ impl<'a, T: ?Sized> AsMut<T> for UniquePtr<'a, T> {
 }
 
 impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<UniquePtr<'a, U>> for UniquePtr<'a, T> {}
+
+*/

@@ -5,6 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+/*
+
+
 use std::ptr::NonNull;
 use std::cell::Cell;
 use std::marker;
@@ -30,6 +33,7 @@ pub struct SharedPtr<'a, T: ?Sized> {
     ptr: NonNull<SharedUnique<T>>,
     pool: &'a PoolAllocator,
     chunk_index: usize,
+    should_drop: bool, //This is mega lame.
     phantom: marker::PhantomData<T>,
 }
 
@@ -38,11 +42,12 @@ impl<'a, T: ?Sized> !marker::Send for SharedPtr<'a, T> {}
 impl<'a, T: ?Sized> !marker::Sync for SharedPtr<'a, T> {}
 
 impl<'a, T: ?Sized> SharedPtr<'a, T> {
-    pub unsafe fn from_raw(ptr: *mut SharedUnique<T>, pool: &'a PoolAllocator, chunk_index: usize) -> Self {
+    pub unsafe fn from_raw(ptr: *mut SharedUnique<T>, pool: &'a PoolAllocator, chunk_index: usize, should_drop: bool) -> Self {
         SharedPtr {
             ptr: NonNull::new_unchecked(ptr),
             pool,
             chunk_index,
+            should_drop,
             phantom: marker::PhantomData,
         }
     }
@@ -53,6 +58,7 @@ impl<'a, T: ?Sized> SharedPtr<'a, T> {
             ptr: this.ptr,
             pool: this.pool,
             chunk_index: this.chunk_index,
+            should_drop: this.should_drop,
         }
     }
 
@@ -92,31 +98,52 @@ impl<'a, T: ?Sized> ops::Deref for SharedPtr<'a, T> {
     }
 }
 
-//TODO: use needs_drop, to know if we should use destroy to drop the SharedPtr.
 impl<'a, T: ?Sized> Drop for SharedPtr<'a, T> {
     fn drop(&mut self) {
 
         self.dec_strong();
         if self.strong() == 0 {
-            //Get the current index of the first available pool item in the pool allocator.
-            let current_first_available = self.pool.first_available();
 
-            //Get the pool item, where the data inside the UniquePtr reside.
-            let mut pool_item = self.pool.storage().get(self.chunk_index).unwrap().borrow_mut();
+            if self.should_drop {
+                //Get the current index of the first available pool item in the pool allocator.
+                let current_first_available = self.pool.first_available();
 
-            //Modify the index to the next free pool item. The old first available pool item
-            //is now "linked" to this pool item, which is now the nex first available pool item.
-            pool_item.set_next(current_first_available);
+                //Get the pool item, where the data inside the UniquePtr reside.
+                let mut pool_item = self.pool.storage().get(self.chunk_index).unwrap().borrow_mut();
 
-            //This pool item becomes the first available pool item in the pool allocator.
-            self.pool.set_first_available(Some(self.chunk_index));
+                //Modify the index to the next free pool item. The old first available pool item
+                //is now "linked" to this pool item, which is now the nex first available pool item.
+                pool_item.set_next(current_first_available);
 
-            //drop the data inside the pool item's memory chunk.
-            unsafe {
-                pool_item.memory_chunk().destroy();
-                //drop the data inside the pool item's memory chunk.
-                pool_item.memory_chunk().set_fill(0);
+                //This pool item becomes the first available pool item in the pool allocator.
+                self.pool.set_first_available(Some(self.chunk_index));
 
+                unsafe {
+                    pool_item.memory_chunk().destroy();
+                    //drop the data inside the pool item's memory chunk.
+                    pool_item.memory_chunk().set_fill(0);
+                }
+
+            } else {
+
+                //Get the current index of the first available pool item in the pool allocator.
+                let current_first_available = self.pool.first_available_copy();
+
+                //Get the pool item, where the data inside the UniquePtr reside.
+                let mut pool_item = self.pool.storage_copy().get(self.chunk_index).unwrap().borrow_mut();
+
+                //Modify the index to the next free pool item. The old first available pool item
+                //is now "linked" to this pool item, which is now the nex first available pool item.
+                pool_item.set_next(current_first_available);
+
+                //This pool item becomes the first available pool item in the pool allocator.
+                self.pool.set_first_available_copy(Some(self.chunk_index));
+
+                unsafe {
+                    //drop the data inside the pool item's memory chunk.
+                    pool_item.memory_chunk().set_fill(0);
+
+                }
             }
         }
     }
@@ -130,6 +157,7 @@ impl<'a, T: ?Sized> Clone for SharedPtr<'a, T> {
             ptr: self.ptr,
             pool: self.pool,
             chunk_index: self.chunk_index,
+            should_drop: self.should_drop,
             phantom: marker::PhantomData,
         }
     }
@@ -207,6 +235,7 @@ pub struct WeakPtr<'a, T: ?Sized> {
     ptr: NonNull<SharedUnique<T>>,
     pool: &'a PoolAllocator,
     chunk_index: usize,
+    should_drop: bool, //This is ultra lame.
 }
 
 impl<'a, T: ?Sized> !marker::Send for WeakPtr<'a, T> {}
@@ -223,6 +252,7 @@ impl<'a, T: ?Sized> WeakPtr<'a, T> {
                 ptr: self.ptr,
                 pool: self.pool,
                 chunk_index: self.chunk_index,
+                should_drop: self.should_drop,
                 phantom: marker::PhantomData,
             })
         }
@@ -242,6 +272,7 @@ impl<'a, T: ?Sized> Clone for WeakPtr<'a, T> {
             ptr: self.ptr,
             pool: self.pool,
             chunk_index: self.chunk_index,
+            should_drop: self.should_drop,
         }
     }
 }
@@ -298,3 +329,4 @@ impl<'a, T: ?Sized> SharedUniquePtr<T> for WeakPtr<'a, T> {
 
 impl<'a, T: ?Sized + marker::Unsize<U>, U: ?Sized> ops::CoerceUnsized<WeakPtr<'a, U>> for WeakPtr<'a, T> {}
 
+*/

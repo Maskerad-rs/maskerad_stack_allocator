@@ -5,6 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+/*
+
 use std::cell::{RefCell, Cell};
 use std::mem;
 use std::ptr;
@@ -104,7 +106,7 @@ impl PoolAllocator {
                     ptr::write(&mut (*ptr), SharedUnique{strong: Cell::new(1), weak: Cell::new(1), value: op()});
 
 
-                    Ok(SharedPtr::from_raw(ptr, &self, index))
+                    Ok(SharedPtr::from_raw(ptr, &self, index, false))
                 },
                 None => {
                     return Err(AllocationError::OutOfPoolError(format!("All the pools in the copy storage were in use when the allocation was requested !")));
@@ -146,7 +148,7 @@ impl PoolAllocator {
                     //Now that we are done, update the type description to indicate that the object is there.
                     *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
-                    Ok(SharedPtr::from_raw(ptr, &self, index))
+                    Ok(SharedPtr::from_raw(ptr, &self, index, true))
 
                 },
                 None => {
@@ -189,7 +191,7 @@ impl PoolAllocator {
                     ptr::write(&mut (*ptr), op());
 
 
-                    Ok(UniquePtr::from_raw(ptr, &self, index))
+                    Ok(UniquePtr::from_raw(ptr, &self, index, false))
                 },
                 None => {
                     return Err(AllocationError::OutOfPoolError(format!("All the pools in the copy storage were in use when the allocation was requested !")));
@@ -229,7 +231,7 @@ impl PoolAllocator {
                     //Now that we are done, update the type description to indicate that the object is there.
                     *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
-                    Ok(UniquePtr::from_raw(ptr, &self, index))
+                    Ok(UniquePtr::from_raw(ptr, &self, index, true))
 
                 },
                 None => {
@@ -332,6 +334,7 @@ impl PoolAllocator {
 mod pool_allocator_test {
     use super::*;
     use std::mem::drop;
+    use smart_pointers::shared_ptr::WeakPtr;
 
     //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
 #[derive(Clone)]
@@ -369,7 +372,7 @@ mod pool_allocator_test {
     #[test]
     fn test_unique_ptr_drop_and_nb_pool_available() {
         //create a pool allocator with 2 pool items of 100 bytes.
-        let pool = PoolAllocator::new(2, 100);
+        let pool = PoolAllocator::new(2, 100, 2, 100);
 
         //the index of the first available pool item is 0.
         assert_eq!(pool.first_available.get(), Some(0));
@@ -414,7 +417,7 @@ mod pool_allocator_test {
         //Clone behavior and usage
 
         //create a pool allocator with 2 pool items of 100 bytes.
-        let pool = PoolAllocator::new(2, 100);
+        let pool = PoolAllocator::new(2, 100, 2, 100);
 
         //the index of the first available pool item is 0.
         assert_eq!(pool.first_available.get(), Some(0));
@@ -447,7 +450,7 @@ mod pool_allocator_test {
     #[test]
     fn test_shared_ptr_behavior() {
         //create a pool allocator with 2 pool items of 100 bytes.
-        let pool = PoolAllocator::new(2, 100);
+        let pool = PoolAllocator::new(2, 100, 2, 100);
         //the index of the first available pool item is 0.
         assert_eq!(pool.first_available.get(), Some(0));
         //Create a SharedPtr from the pool.
@@ -577,7 +580,7 @@ mod pool_allocator_test {
 
 
         //create a pool allocator with 2 pool items of 100 bytes.
-        let pool = PoolAllocator::new(2, 100);
+        let pool = PoolAllocator::new(2, 100, 2, 100);
         //the index of the first available pool item is 0.
         assert_eq!(pool.first_available.get(), Some(0));
 
@@ -598,3 +601,5 @@ mod pool_allocator_test {
     }
 
 }
+
+*/

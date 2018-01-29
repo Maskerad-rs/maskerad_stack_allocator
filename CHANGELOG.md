@@ -83,3 +83,12 @@ of Shared<T> for WeakPtr and SharedPtr, and Unique<T> for UniquePtr.
 #### version 3.1.2
 
 Forgot to update the documentation. Fixed.
+
+#### version 4.0.0
+
+The stack allocators for data implementing the Copy trait and the Drop trait have been merged
+together.
+
+Removed the pool allocator and the smart pointers.
+
+Updated the documentation.
