@@ -15,7 +15,7 @@ use memory_chunk::MemoryChunk;
 use std::intrinsics::needs_drop;
 
 
-/// A stack-based allocator for data implementing the Drop trait.
+/// A stack-based allocator.
 ///
 /// It manages two `MemoryChunk`s to:
 ///
