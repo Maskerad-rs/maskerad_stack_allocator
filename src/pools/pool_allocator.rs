@@ -13,25 +13,35 @@ use allocation_error::{AllocationResult, AllocationError};
 use smart_pointers::unique_ptr::UniquePtr;
 use smart_pointers::shared_ptr::{SharedUnique, SharedPtr};
 use pools::pool_item::PoolItem;
+use std::intrinsics::needs_drop;
 
 pub struct PoolAllocator {
     storage: Vec<RefCell<PoolItem>>,
+    storage_copy: Vec<RefCell<PoolItem>>,
     first_available: Cell<Option<usize>>,
+    first_available_copy: Cell<Option<usize>>,
 }
 
 impl PoolAllocator {
     /// Creates a poolAllocator with `nb_item` chunks of `size_item` size in byte.
-    pub fn new(nb_item: usize, size_item: usize) -> Self {
+    pub fn new(nb_item: usize, size_item: usize, nb_item_copy: usize, size_item_copy: usize) -> Self {
         let mut storage = Vec::with_capacity(nb_item);
         for i in 0..nb_item - 1 {
             storage.push(RefCell::new(PoolItem::new(size_item, Some(i+1))));
         }
-
         storage.push(RefCell::new(PoolItem::new(size_item, None)));
+
+        let mut storage_copy = Vec::with_capacity(nb_item_copy);
+        for i in 0..nb_item_copy - 1 {
+            storage_copy.push(RefCell::new(PoolItem::new(size_item_copy, Some(i+1))));
+        }
+        storage_copy.push(RefCell::new(PoolItem::new(size_item_copy, None)));
 
         PoolAllocator {
             storage,
+            storage_copy,
             first_available: Cell::new(Some(0)),
+            first_available_copy: Cell::new(Some(0)),
         }
     }
 
@@ -40,14 +50,26 @@ impl PoolAllocator {
         &self.storage
     }
 
+    pub fn storage_copy(&self) -> &[RefCell<PoolItem>] {
+        &self.storage_copy
+    }
+
     /// Returns the index of the first available pool item in the pool allocator.
     pub fn first_available(&self) -> Option<usize> {
         self.first_available.get()
     }
 
+    pub fn first_available_copy(&self) -> Option<usize> {
+        self.first_available_copy.get()
+    }
+
     /// Sets the index of the first available pool item in the pool allocator.
     pub fn set_first_available(&self, first_available: Option<usize>) {
         self.first_available.set(first_available);
+    }
+
+    pub fn set_first_available_copy(&self, first_available: Option<usize>) {
+        self.first_available_copy.set(first_available)
     }
 
     /// Allocates data in the pool allocator, returning a `SharedPtr`.
@@ -56,8 +78,41 @@ impl PoolAllocator {
     pub fn alloc_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy_shared(op)
+        unsafe {
+            if needs_drop::<T>() {
+                self.alloc_non_copy_shared(op)
+            } else {
+                self.alloc_copy_shared(op)
+            }
+        }
+
     }
+
+    fn alloc_copy_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            match self.first_available_copy() {
+                Some(index) => {
+                    //Get an aligned raw pointer to place the object in it.
+                    let ptr = self.alloc_copy_inner(index,mem::size_of::<SharedUnique<T>>(), mem::align_of::<SharedUnique<T>>())?;
+
+                    //cast this raw pointer to the type of the object.
+                    let ptr = ptr as *mut SharedUnique<T>;
+
+                    //Write the data in the memory location.
+                    ptr::write(&mut (*ptr), SharedUnique{strong: Cell::new(1), weak: Cell::new(1), value: op()});
+
+
+                    Ok(SharedPtr::from_raw(ptr, &self, index))
+                },
+                None => {
+                    return Err(AllocationError::OutOfPoolError(format!("All the pools in the copy storage were in use when the allocation was requested !")));
+                }
+            }
+        }
+    }
+
 
     fn alloc_non_copy_shared<T, F>(&self, op: F) -> AllocationResult<SharedPtr<T>>
         where F: FnOnce() -> T
@@ -95,7 +150,7 @@ impl PoolAllocator {
 
                 },
                 None => {
-                    return Err(AllocationError::OutOfPoolError(format!("All the pools in the pool allocator were in use when the allocation was requested !")));
+                    return Err(AllocationError::OutOfPoolError(format!("All the pools in the non-copy storage were in use when the allocation was requested !")));
                 }
             }
         }
@@ -108,7 +163,39 @@ impl PoolAllocator {
     pub fn alloc_unique<F, T>(&self, op: F) -> AllocationResult<UniquePtr<T>>
         where F: FnOnce() -> T
     {
-        self.alloc_non_copy_unique(op)
+        unsafe {
+            if needs_drop::<T>() {
+                self.alloc_non_copy_unique(op)
+            } else {
+                self.alloc_copy_unique(op)
+            }
+        }
+
+    }
+
+    fn alloc_copy_unique<T, F>(&self, op: F) -> AllocationResult<UniquePtr<T>>
+        where F: FnOnce() -> T
+    {
+        unsafe {
+            match self.first_available_copy() {
+                Some(index) => {
+                    //Get an aligned raw pointer to place the object in it.
+                    let ptr = self.alloc_copy_inner(index,mem::size_of::<T>(), mem::align_of::<T>())?;
+
+                    //cast this raw pointer to the type of the object.
+                    let ptr = ptr as *mut T;
+
+                    //Write the data in the memory location.
+                    ptr::write(&mut (*ptr), op());
+
+
+                    Ok(UniquePtr::from_raw(ptr, &self, index))
+                },
+                None => {
+                    return Err(AllocationError::OutOfPoolError(format!("All the pools in the copy storage were in use when the allocation was requested !")));
+                }
+            }
+        }
     }
 
     #[inline]
@@ -146,7 +233,7 @@ impl PoolAllocator {
 
                 },
                 None => {
-                    return Err(AllocationError::OutOfPoolError(format!("All the pools in the pool allocator were in use when the allocation was requested !")));
+                    return Err(AllocationError::OutOfPoolError(format!("All the pools in the non-copy storage were in use when the allocation was requested !")));
                 }
             }
         }
@@ -182,7 +269,7 @@ impl PoolAllocator {
 
         //If the allocator become oom after this possible allocation, abort the program.
         if end >= non_copy_storage.memory_chunk().capacity() {
-            return Err(AllocationError::OutOfMemoryError(format!("The memory chunk of the pool allocator doesn't have enough memory to hold this type !")));
+            return Err(AllocationError::OutOfMemoryError(format!("memory chunks of the non-copy storage don't have enough memory to hold this type !")));
         }
 
         //Update the current top of the stack. The first unused memory address is at
@@ -206,6 +293,37 @@ impl PoolAllocator {
                     start_storage.offset(start as isize)
                 ))
 
+        }
+    }
+
+    fn alloc_copy_inner(&self, chunk_index: usize, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
+        //borrow mutably the memory chunk used by the allocator.
+        let copy_storage = self.storage_copy().get(chunk_index).unwrap().borrow();
+
+        //This chunk of memory is now in use, update the index of the first available chunk of memory.
+        self.first_available_copy.set(copy_storage.next());
+
+        //Get the index of the first unused memory address.
+        let fill = copy_storage.memory_chunk().fill();
+
+        //Get the index of the aligned memory address, which will be returned.
+        let start = utils::round_up(fill, align);
+
+        //Get the index of the future first unused memory address, according to the size of the object.
+        let end = start + n_bytes;
+
+        //We don't grow the capacity, or create another chunk.
+        if end >= copy_storage.memory_chunk().capacity() {
+            return Err(AllocationError::OutOfMemoryError(format!("memory chunks of the copy storage don't have enough memory to hold this type !")));
+        }
+
+        //Set the first unused memory address of the memory chunk to the index calculated earlier.
+        copy_storage.memory_chunk().set_fill(end);
+
+        unsafe {
+            //Return the raw pointer to the aligned memory location, which will be used to place
+            //the object in the allocator.
+            Ok(copy_storage.memory_chunk().as_ptr().offset(start as isize))
         }
     }
 }
