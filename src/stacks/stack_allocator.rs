@@ -45,7 +45,7 @@ use std::intrinsics::needs_drop;
 ///
 /// - And return an immutable/mutable reference to the object which has been placed in the memory chunk.
 ///
-/// This offset is calculated by the size of the object, the size of a TypeDescription structure (if the object implement the `Drop` trait),
+/// This offset is calculated by the size of the object, the size of a `TypeDescription` structure (if the object implement the `Drop` trait),
 /// its memory-alignment and an offset to align the object in memory.
 ///
 /// # Roll-back
@@ -54,11 +54,16 @@ use std::intrinsics::needs_drop;
 /// or reset a memory chunk entirely.
 ///
 /// When a memory chunk is reset to a marker, it will:
+///
 /// - Drop all the content lying between the marker and the first unused memory address, if it holds data implementing the `Drop` trait,
+///
 /// - Set the first unused memory address to the marker.
 ///
+///
 /// When a memory chunk is reset completely, it will:
+///
 /// - Drop everything, if ti holds data implementing the `Drop` trait,
+///
 /// - Set the first unused memory address to the bottom of its stack.
 ///
 /// # Example

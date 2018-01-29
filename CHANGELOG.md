@@ -92,3 +92,7 @@ together.
 Removed the pool allocator and the smart pointers.
 
 Updated the documentation.
+
+#### version 4.0.1
+
+Updated the documentation (formatting).
