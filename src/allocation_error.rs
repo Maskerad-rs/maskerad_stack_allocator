@@ -8,7 +8,6 @@
 use std::fmt;
 use std::error::Error;
 
-
 /// A custom error enumeration, used by AllocationResult as the error type.
 /// Handle "out of memory" errors.
 #[derive(Debug)]
@@ -17,11 +16,18 @@ pub enum AllocationError {
     OutOfPoolError(String),
 }
 
+unsafe impl Send for AllocationError {}
+unsafe impl Sync for AllocationError {}
+
 impl fmt::Display for AllocationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &AllocationError::OutOfMemoryError(ref description) => write!(f, "Out of memory error: {}", description),
-            &AllocationError::OutOfPoolError(ref description) => write!(f, "Out of pool error: {}", description),
+            &AllocationError::OutOfMemoryError(ref description) => {
+                write!(f, "Out of memory error: {}", description)
+            }
+            &AllocationError::OutOfPoolError(ref description) => {
+                write!(f, "Out of pool error: {}", description)
+            }
         }
     }
 }

@@ -19,7 +19,6 @@
 use allocation_error::AllocationResult;
 use stacks::stack_allocator::StackAllocator;
 
-
 /// A double-ended allocator.
 ///
 /// It manages two `StackAllocator`s.
@@ -34,9 +33,10 @@ use stacks::stack_allocator::StackAllocator;
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-///
+/// # use std::error::Error;
+/// # fn try_main() -> Result<(), Box<Error>> {
 /// //50 bytes for the MemoryChunks storing data implementing the Drop trait, 50 for the others.
 /// let double_ended_allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
 ///
@@ -46,37 +46,40 @@ use stacks::stack_allocator::StackAllocator;
 ///
 /// let my_vec: &Vec<u8> = double_ended_allocator.alloc_temp(|| {
 ///     Vec::with_capacity(10)
-/// }).unwrap();
+/// })?;
 ///
 /// let my_vec_2: &Vec<u8> = double_ended_allocator.alloc_resident(|| {
 ///     Vec::with_capacity(10)
-/// }).unwrap();
+/// })?;
 ///
 /// double_ended_allocator.reset_temp();
 ///
 /// assert_eq!(top_temp, double_ended_allocator.marker_temp());
 /// assert_ne!(top_resident, double_ended_allocator.marker_resident());
-///
+/// # Ok(())
+/// # }
+/// # fn main() {
+/// #   try_main().unwrap();
+/// # }
 /// ```
-
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DoubleEndedStackAllocator {
     stack_resident: StackAllocator,
     stack_temp: StackAllocator,
 }
 
-
 impl DoubleEndedStackAllocator {
     /// Creates a DoubleEndedStackAllocator with the given capacity, in bytes.
     /// # Example
-    /// ```
-    /// #![feature(alloc)]
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
     ///
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 50);
-    /// assert_eq!(allocator.stack_temp().storage().capacity(), 50);
-    /// assert_eq!(allocator.stack_temp().storage_copy().capacity(), 25);
-    /// assert_eq!(allocator.stack_resident().storage().capacity(), 50);
-    /// assert_eq!(allocator.stack_resident().storage_copy().capacity(), 25);
+    /// assert_eq!(allocator.stack_temp().capacity(), 50);
+    /// assert_eq!(allocator.stack_temp().capacity_copy(), 25);
+    /// assert_eq!(allocator.stack_resident().capacity(), 50);
+    /// assert_eq!(allocator.stack_resident().capacity_copy(), 25);
     /// ```
     pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
         DoubleEndedStackAllocator {
@@ -104,27 +107,33 @@ impl DoubleEndedStackAllocator {
     /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
     /// let my_vec: &mut Vec<u8> = allocator.alloc_mut_resident(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// my_vec.push(1);
     ///
     /// assert!(!my_vec.is_empty());
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     #[inline]
     pub fn alloc_mut_resident<T, F>(&self, op: F) -> AllocationResult<&mut T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         self.stack_resident().alloc_mut(op)
     }
-
 
     /// Allocates data in the `StackAllocator` used for resident memory, returning an immutable reference to the allocated data.
     ///
@@ -135,20 +144,28 @@ impl DoubleEndedStackAllocator {
     /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
-    /// ```
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
     ///
+    /// ```rust
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc_resident(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert!(my_vec.is_empty());
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     #[inline]
     pub fn alloc_resident<T, F>(&self, op: F) -> AllocationResult<&T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         self.stack_resident().alloc(op)
     }
@@ -162,22 +179,29 @@ impl DoubleEndedStackAllocator {
     /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
     /// let my_vec: &mut Vec<u8> = allocator.alloc_mut_temp(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// my_vec.push(1);
     ///
     /// assert!(!my_vec.is_empty());
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn alloc_mut_temp<T, F>(&self, op: F) -> AllocationResult<&mut T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         self.stack_temp().alloc_mut(op)
     }
@@ -191,9 +215,11 @@ impl DoubleEndedStackAllocator {
     /// This function will panic if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
-    /// ```
-    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
     ///
+    /// ```rust
+    /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc_temp(|| {
@@ -201,9 +227,15 @@ impl DoubleEndedStackAllocator {
     /// }).unwrap();
     ///
     /// assert!(my_vec.is_empty());
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn alloc_temp<T, F>(&self, op: F) -> AllocationResult<&T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         self.stack_temp().alloc(op)
     }
@@ -235,10 +267,11 @@ impl DoubleEndedStackAllocator {
     /// Reset the `MemoryChunk` storing data implementing the `Drop` trait of the `StackAllocator` used for resident memory, dropping all the content residing inside it.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -247,15 +280,20 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc_resident(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_resident(), 0);
     ///
     /// allocator.reset_resident();
     ///
-    /// //The memory chunk storing data implementing the Drop trait of the StackAllocator used for resident memory data has been totally reset, and all its content has been dropped.
+    /// //The memory chunk storing data implementing the Drop trait of the StackAllocator
+    /// //used for resident memory data has been totally reset, and all its content has been dropped.
     /// assert_eq!(allocator.marker_resident(), 0);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_resident(&self) {
         self.stack_resident().reset()
@@ -264,10 +302,11 @@ impl DoubleEndedStackAllocator {
     /// Reset the `MemoryChunk` storing data implementing the `Copy` trait of the `StackAllocator` used for resident memory.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(100, 100);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -276,7 +315,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_i32 = allocator.alloc_resident(|| {
     ///     8 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_resident_copy(), 0);
     ///
@@ -284,7 +323,11 @@ impl DoubleEndedStackAllocator {
     ///
     /// //The memory chunk storing data implementing the Copy trait of the StackAllocator used for resident memory data has been totally reset.
     /// assert_eq!(allocator.marker_resident_copy(), 0);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_resident_copy(&self) {
         self.stack_resident().reset_copy()
@@ -293,10 +336,11 @@ impl DoubleEndedStackAllocator {
     /// Reset the `MemoryChunk` storing data implementing the `Drop` trait of the `StackAllocator` used for temporary memory, dropping all the content residing inside it.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(200, 200);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -305,7 +349,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc_temp(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_temp(), 0);
     ///
@@ -313,7 +357,11 @@ impl DoubleEndedStackAllocator {
     ///
     /// //The memory chunk storing data implementing the Drop trait of the StackAllocator used for temporary memory data has been totally reset, and all its content has been dropped.
     /// assert_eq!(allocator.marker_temp(), 0);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_temp(&self) {
         self.stack_temp().reset()
@@ -322,10 +370,11 @@ impl DoubleEndedStackAllocator {
     /// Reset the `MemoryChunk` storing data implementing the `Copy` trait of the `StackAllocator` used for temporary memory.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(200, 200);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -334,7 +383,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_i32 = allocator.alloc_temp(|| {
     ///     8 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_temp_copy(), 0);
     ///
@@ -342,22 +391,25 @@ impl DoubleEndedStackAllocator {
     ///
     /// //The memory chunk storing data implementing the Copy trait of the StackAllocator used for temporary memory data has been totally reset.
     /// assert_eq!(allocator.marker_temp_copy(), 0);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_temp_copy(&self) {
         self.stack_temp().reset_copy()
     }
 
-
-
     /// Reset partially the `MemoryChunk` storing data implementing the `Drop` trait of the `StackAllocator` used for resident memory, dropping all the content residing
     /// between the current top of the stack and this marker.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(200, 200);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -366,7 +418,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc_resident(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_resident(), 0);
     /// //Get a marker
@@ -374,15 +426,20 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_vec_2: &Vec<u8> = allocator.alloc_resident(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// allocator.reset_to_marker_resident(marker);
     ///
-    /// //The memory chunk storing data implementing the Drop trait of the StackAllocator used for resident memory data has been partially reset,
+    /// //The memory chunk storing data implementing the Drop trait of the StackAllocator
+    /// //used for resident memory data has been partially reset,
     /// //and all the content between the current top of the stack and the marker has been dropped.
     /// assert_ne!(allocator.marker_resident(), 0);
     /// assert_eq!(allocator.marker_resident(), marker);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_to_marker_resident(&self, marker: usize) {
         self.stack_resident().reset_to_marker(marker);
@@ -391,10 +448,11 @@ impl DoubleEndedStackAllocator {
     /// Reset partially the `MemoryChunk` storing data implementing the `Copy` trait of the `StackAllocator` used for resident memory.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(200, 200);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -403,7 +461,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_i32 = allocator.alloc_resident(|| {
     ///     8 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_resident_copy(), 0);
     /// //Get a marker
@@ -411,14 +469,18 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_i32_2 = allocator.alloc_resident(|| {
     ///     9 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// allocator.reset_to_marker_resident_copy(marker);
     ///
     /// //The memory chunk storing data implementing the Copy trait of the StackAllocator used for resident memory data has been partially reset.
     /// assert_ne!(allocator.marker_resident_copy(), 0);
     /// assert_eq!(allocator.marker_resident_copy(), marker);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_to_marker_resident_copy(&self, marker: usize) {
         self.stack_resident().reset_to_marker_copy(marker);
@@ -428,10 +490,11 @@ impl DoubleEndedStackAllocator {
     /// between the current top of the stack and this marker.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(200, 200);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -440,7 +503,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc_temp(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_temp(), 0);
     /// //Get a marker
@@ -448,7 +511,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_vec_2: &Vec<u8> = allocator.alloc_temp(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// allocator.reset_to_marker_temp(marker);
     ///
@@ -456,7 +519,11 @@ impl DoubleEndedStackAllocator {
     /// //and all the content between the current top of the stack and the marker has been dropped.
     /// assert_ne!(allocator.marker_temp(), 0);
     /// assert_eq!(allocator.marker_temp(), marker);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_to_marker_temp(&self, marker: usize) {
         self.stack_temp().reset_to_marker(marker);
@@ -465,10 +532,11 @@ impl DoubleEndedStackAllocator {
     /// Reset partially the `MemoryChunk` storing data implementing the `Copy` trait of the `StackAllocator` used for temporary memory.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::DoubleEndedStackAllocator;
-    ///
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleEndedStackAllocator::with_capacity(200, 200);
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -477,7 +545,7 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_i32 = allocator.alloc_temp(|| {
     ///     8 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_temp_copy(), 0);
     /// //Get a marker
@@ -485,22 +553,23 @@ impl DoubleEndedStackAllocator {
     ///
     /// let my_i32_2 = allocator.alloc_temp(|| {
     ///     9 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// allocator.reset_to_marker_temp_copy(marker);
     ///
     /// //The memory chunk storing data implementing the Copy trait of the StackAllocator used for temporary memory data has been partially reset.
     /// assert_ne!(allocator.marker_temp_copy(), 0);
     /// assert_eq!(allocator.marker_temp_copy(), marker);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_to_marker_temp_copy(&self, marker: usize) {
         self.stack_temp().reset_to_marker_copy(marker);
     }
 }
-
-
-
 
 #[cfg(test)]
 mod double_ended_stack_allocator_test {
@@ -508,23 +577,18 @@ mod double_ended_stack_allocator_test {
 
     //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
     struct Monster {
-        _hp :u32,
-
+        _hp: u32,
     }
 
     impl Monster {
         pub fn new(hp: u32) -> Self {
-            Monster {
-                _hp: hp,
-            }
+            Monster { _hp: hp }
         }
     }
 
     impl Default for Monster {
         fn default() -> Self {
-            Monster {
-                _hp: 1,
-            }
+            Monster { _hp: 1 }
         }
     }
 
@@ -539,31 +603,29 @@ mod double_ended_stack_allocator_test {
         unsafe {
             //create a StackAllocator with the specified size.
             let alloc = DoubleEndedStackAllocator::with_capacity(100, 100);
-            let start_chunk_temp = alloc.stack_temp().storage().as_ptr();
-            let start_chunk_resident = alloc.stack_resident().storage().as_ptr();
-            let first_unused_mem_addr_temp = start_chunk_temp.offset(alloc.stack_temp().storage().fill() as isize);
-            let first_unused_mem_addr_resident = start_chunk_resident.offset(alloc.stack_resident().storage().fill() as isize);
+            let start_chunk_temp = alloc.stack_temp().storage_as_ptr();
+            let start_chunk_resident = alloc.stack_resident().storage_as_ptr();
+            let first_unused_mem_addr_temp =
+                start_chunk_temp.offset(alloc.stack_temp().marker() as isize);
+            let first_unused_mem_addr_resident =
+                start_chunk_resident.offset(alloc.stack_resident().marker() as isize);
 
             assert_eq!(start_chunk_temp, first_unused_mem_addr_temp);
             assert_eq!(start_chunk_resident, first_unused_mem_addr_resident);
         }
     }
 
-
     #[test]
     fn allocation_test() {
         //We allocate 200 bytes of memory.
         let alloc = DoubleEndedStackAllocator::with_capacity(100, 100);
 
-        let start_alloc_temp = alloc.stack_temp().storage().as_ptr();
-        let start_alloc_resident = alloc.stack_resident().storage().as_ptr();
+        let start_alloc_temp = alloc.stack_temp().storage_as_ptr();
+        let start_alloc_resident = alloc.stack_resident().storage_as_ptr();
 
-        let _my_monster = alloc.alloc_temp(|| {
-            Monster::new(1)
-        }).unwrap();
+        let _my_monster = alloc.alloc_temp(|| Monster::new(1)).unwrap();
 
         unsafe {
-
             let top_stack_temp = start_alloc_temp.offset(alloc.marker_temp() as isize);
             let top_stack_resident = start_alloc_resident.offset(alloc.marker_resident() as isize);
 
@@ -571,9 +633,7 @@ mod double_ended_stack_allocator_test {
             assert_eq!(start_alloc_resident, top_stack_resident);
         }
 
-        let _my_monster = alloc.alloc_resident(|| {
-            Monster::new(1)
-        }).unwrap();
+        let _my_monster = alloc.alloc_resident(|| Monster::new(1)).unwrap();
 
         unsafe {
             let top_stack_temp = start_alloc_temp.offset(alloc.marker_temp() as isize);
@@ -591,12 +651,10 @@ mod double_ended_stack_allocator_test {
 
         let top_stack_index_temp = alloc.marker_temp();
 
-        let start_alloc_temp = alloc.stack_temp().storage().as_ptr();
-        let start_alloc_resident = alloc.stack_resident().storage().as_ptr();
+        let start_alloc_temp = alloc.stack_temp().storage_as_ptr();
+        let start_alloc_resident = alloc.stack_resident().storage_as_ptr();
 
-        let _my_monster = alloc.alloc_temp(|| {
-            Monster::new(1)
-        }).unwrap();
+        let _my_monster = alloc.alloc_temp(|| Monster::new(1)).unwrap();
 
         unsafe {
             let top_stack_temp = start_alloc_temp.offset(alloc.marker_temp() as isize);
@@ -606,9 +664,7 @@ mod double_ended_stack_allocator_test {
             assert_eq!(start_alloc_resident, top_stack_resident);
         }
 
-        let _another_monster = alloc.alloc_resident(|| {
-            Monster::default()
-        }).unwrap();
+        let _another_monster = alloc.alloc_resident(|| Monster::default()).unwrap();
 
         unsafe {
             let top_stack_temp = start_alloc_temp.offset(alloc.marker_temp() as isize);
@@ -644,4 +700,3 @@ mod double_ended_stack_allocator_test {
     }
 
 }
-

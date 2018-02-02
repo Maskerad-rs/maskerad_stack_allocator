@@ -26,6 +26,7 @@ use utils;
 ///
 ///
 /// You should not use the MemoryChunk directly. The allocators manage memory chunks, use them.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MemoryChunk {
     storage: RawVec<u8>,
     /// Index of the first unused byte.
@@ -68,7 +69,6 @@ impl MemoryChunk {
 
     /// Drop the data contained in the chunk, starting from the given marker.
     pub unsafe fn destroy_to_marker(&self, marker: usize) {
-
         //Get the index of the marker.
         //We'll start dropping the content from this location.
         let mut index = marker;
@@ -82,13 +82,13 @@ impl MemoryChunk {
 
         //While the starting index is inferior to the ending one...
         while index < fill {
-
             //Get a raw pointer on the TypeDescription of the object.
             let type_description_data = storage_start.offset(index as isize) as *const usize;
 
             //Decode this raw pointer to obtain the vtable of the object, and a boolean to know if
             //the object has been initialized.
-            let (type_description, is_done) = utils::un_bitpack_type_description_ptr(*type_description_data);
+            let (type_description, is_done) =
+                utils::un_bitpack_type_description_ptr(*type_description_data);
 
             //Get the size and the alignment of the object, with its type description.
             let (size, alignment) = ((*type_description).size, (*type_description).alignment);
@@ -109,7 +109,10 @@ impl MemoryChunk {
             }
 
             //Find where the next type description lives.
-            index = utils::round_up(start + size, mem::align_of::<*const utils::TypeDescription>());
+            index = utils::round_up(
+                start + size,
+                mem::align_of::<*const utils::TypeDescription>(),
+            );
         }
     }
 }

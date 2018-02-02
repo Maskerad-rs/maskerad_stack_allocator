@@ -6,14 +6,13 @@
 // copied, modified, or distributed except according to those terms.
 
 use core::ptr;
-use std::cell::{RefCell, Ref};
+use std::cell::{BorrowError, Ref, RefCell};
 use std::mem;
 
 use allocation_error::{AllocationError, AllocationResult};
 use utils;
 use memory_chunk::MemoryChunk;
 use std::intrinsics::needs_drop;
-
 
 /// A stack-based allocator.
 ///
@@ -68,16 +67,17 @@ use std::intrinsics::needs_drop;
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// use maskerad_memory_allocators::StackAllocator;
-///
+/// # use std::error::Error;
+/// # fn try_main() -> Result<(), Box<Error>> {
 /// //100 bytes for data implementing Drop, 100 bytes for data implementing Copy.
 /// let single_frame_allocator = StackAllocator::with_capacity(100, 100);
 /// let mut closed = false;
 ///
 /// while !closed {
 ///     // The allocator is cleared every frame.
-///     // Everything is dropped, and allocation occurs from the bottom of the stack.
+///     // Everything is dropped.
 ///     single_frame_allocator.reset();
 ///
 ///     //...
@@ -86,17 +86,22 @@ use std::intrinsics::needs_drop;
 ///     //Be sure to use the data during this frame only!
 ///     let my_vec: &Vec<u8> = single_frame_allocator.alloc(|| {
 ///         Vec::with_capacity(10)
-///     }).unwrap();
+///     })?;
 ///
 ///     assert!(my_vec.is_empty());
 ///     closed = true;
 /// }
+/// # Ok(())
+/// # }
+/// # fn main() {
+/// #   try_main().unwrap();
+/// # }
 /// ```
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct StackAllocator {
     storage: RefCell<MemoryChunk>,
     storage_copy: RefCell<MemoryChunk>,
 }
-
 
 impl StackAllocator {
     /// Creates a StackAllocator with the given capacities, in bytes.
@@ -104,29 +109,19 @@ impl StackAllocator {
     /// The first capacity is for the `MemoryChunk` holding data implementing the `Drop` trait,
     /// the second is for the `MemoryChunk` holding data implementing the `Copy` trait.
     /// # Example
-    /// ```
-    /// #![feature(alloc)]
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// let allocator = StackAllocator::with_capacity(100, 50);
-    /// assert_eq!(allocator.storage().capacity(), 100);
-    /// assert_eq!(allocator.storage_copy().capacity(), 50);
+    /// assert_eq!(allocator.capacity(), 100);
+    /// assert_eq!(allocator.capacity_copy(), 50);
     /// ```
     pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
         StackAllocator {
             storage: RefCell::new(MemoryChunk::new(capacity)),
             storage_copy: RefCell::new(MemoryChunk::new(capacity_copy)),
         }
-    }
-
-    /// Returns a borrowed reference to the memory chunk used for data implementing the `Drop` trait.
-    pub fn storage(&self) -> Ref<MemoryChunk> {
-        self.storage.borrow()
-    }
-
-    /// Returns a borrowed reference to the memory chunk used for data implementing the `Copy` trait.
-    pub fn storage_copy(&self) -> Ref<MemoryChunk> {
-        self.storage_copy.borrow()
     }
 
     /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
@@ -140,17 +135,25 @@ impl StackAllocator {
     /// # Example
     /// ```
     /// use maskerad_memory_allocators::StackAllocator;
-    ///
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = StackAllocator::with_capacity(100, 100);
     ///
     /// let my_i32 = allocator.alloc_mut(|| {
     ///     26 as i32
-    /// }).unwrap();
+    /// })?;
+    ///
     /// assert_eq!(my_i32, &mut 26);
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     #[inline]
     pub fn alloc_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         unsafe {
             if needs_drop::<T>() {
@@ -163,14 +166,16 @@ impl StackAllocator {
 
     /// The function actually writing data in the memory chunk
     fn alloc_non_copy_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         unsafe {
             //Get the type description of the type T (get its vtable).
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
-            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
+            let (type_description_ptr, ptr) =
+                self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //Cast them.
             let type_description_ptr = type_description_ptr as *mut usize;
@@ -194,7 +199,8 @@ impl StackAllocator {
 
     //Functions for the copyable part of the stack allocator.
     fn alloc_copy_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         unsafe {
             //Get an aligned raw pointer to place the object in it.
@@ -220,19 +226,28 @@ impl StackAllocator {
     /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
     ///
     /// # Example
-    /// ```
-    /// use maskerad_memory_allocators::StackAllocator;
     ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = StackAllocator::with_capacity(100, 100);
     ///
     /// let my_i32 = allocator.alloc(|| {
     ///     26 as i32
-    /// }).unwrap();
+    /// })?;
+    ///
     /// assert_eq!(my_i32, &26);
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     #[inline]
     pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         unsafe {
             if needs_drop::<T>() {
@@ -243,21 +258,21 @@ impl StackAllocator {
         }
     }
 
-
-
     //Functions for the non-copyable part of the arena.
 
     /// The function actually writing data in the memory chunk
     #[inline]
     fn alloc_non_copy<T, F>(&self, op: F) -> AllocationResult<&T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         unsafe {
             //Get the type description of the type T (get its vtable).
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
-            let (type_description_ptr, ptr) = self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
+            let (type_description_ptr, ptr) =
+                self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //Cast them.
             let type_description_ptr = type_description_ptr as *mut usize;
@@ -280,7 +295,8 @@ impl StackAllocator {
     }
 
     fn alloc_copy<T, F>(&self, op: F) -> AllocationResult<&T>
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         unsafe {
             //Get an aligned raw pointer to place the object in it.
@@ -300,60 +316,67 @@ impl StackAllocator {
     /// The function asking the memory chunk to give us raw pointers to memory locations and update
     /// the current top of the stack.
     #[inline]
-    fn alloc_non_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<(*const u8, *const u8)> {
+    fn alloc_non_copy_inner(
+        &self,
+        n_bytes: usize,
+        align: usize,
+    ) -> AllocationResult<(*const u8, *const u8)> {
+        let non_copy_storage = self.storage.borrow();
 
-                let non_copy_storage = self.storage();
+        //Get the index of the first unused byte in the memory chunk.
+        let fill = non_copy_storage.fill();
 
-                //Get the index of the first unused byte in the memory chunk.
-                let fill = non_copy_storage.fill();
+        //Get the index of where we'll write the type description data
+        //(the first unused byte in the memory chunk).
+        let type_description_start = fill;
 
-                //Get the index of where we'll write the type description data
-                //(the first unused byte in the memory chunk).
-                let type_description_start = fill;
+        // Get the index of where the object should reside (unaligned location actually).
+        let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
 
-                // Get the index of where the object should reside (unaligned location actually).
-                let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
+        //With the index to the unaligned memory address, determine the index to
+        //the aligned memory address where the object will reside,
+        //according to its memory alignment.
+        let start = utils::round_up(after_type_description, align);
 
-                //With the index to the unaligned memory address, determine the index to
-                //the aligned memory address where the object will reside,
-                //according to its memory alignment.
-                let start = utils::round_up(after_type_description, align);
+        //Determine the index of the next aligned memory address for a type description, according to the size of the object
+        //and the memory alignment of a type description.
+        let end = utils::round_up(
+            start + n_bytes,
+            mem::align_of::<*const utils::TypeDescription>(),
+        );
 
-                //Determine the index of the next aligned memory address for a type description, according to the size of the object
-                //and the memory alignment of a type description.
-                let end = utils::round_up(start + n_bytes, mem::align_of::<*const utils::TypeDescription>());
+        //If the allocator becomes oom after this possible allocation, abort the program.
+        if end >= non_copy_storage.capacity() {
+            return Err(AllocationError::OutOfMemoryError(format!(
+                "The stack allocator is out of memory !"
+            )));
+        }
 
-                //If the allocator becomes oom after this possible allocation, abort the program.
-                if end >= non_copy_storage.capacity() {
-                    return Err(AllocationError::OutOfMemoryError(format!("The stack allocator is out of memory !")));
-                }
+        //Update the current top of the stack.
+        //The first unused memory address is at index 'end',
+        //where the next type description would be written
+        //if an allocation was asked.
+        non_copy_storage.set_fill(end);
 
-                //Update the current top of the stack.
-                //The first unused memory address is at index 'end',
-                //where the next type description would be written
-                //if an allocation was asked.
-                non_copy_storage.set_fill(end);
+        unsafe {
+            // Get a raw pointer to the start of our MemoryChunk's RawVec
+            let start_storage = non_copy_storage.as_ptr();
 
-                unsafe {
-                    // Get a raw pointer to the start of our MemoryChunk's RawVec
-                    let start_storage = non_copy_storage.as_ptr();
-
-                    Ok((
-                        //From this raw pointer, get the correct raw pointers with
+            Ok((
+                //From this raw pointer, get the correct raw pointers with
                         //the indices we calculated earlier.
 
                         //The raw pointer to the type description of the object.
-                        start_storage.offset(type_description_start as isize),
-
-                        //The raw pointer to the object.
-                        start_storage.offset(start as isize)
-                    ))
-                }
+                start_storage.offset(type_description_start as isize),
+                //The raw pointer to the object.
+                start_storage.offset(start as isize),
+            ))
+        }
     }
 
     fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
         //borrow mutably the memory chunk used by the allocator.
-        let copy_storage = self.storage_copy();
+        let copy_storage = self.storage_copy.borrow();
 
         //Get the index of the first unused memory address in the memory chunk.
         let fill = copy_storage.fill();
@@ -366,7 +389,9 @@ impl StackAllocator {
 
         //We don't grow the capacity, or create another chunk.
         if end >= copy_storage.capacity() {
-            return Err(AllocationError::OutOfMemoryError(format!("The copy stack allocator is out of memory !")));
+            return Err(AllocationError::OutOfMemoryError(format!(
+                "The copy stack allocator is out of memory !"
+            )));
         }
 
         //Set the first unused memory address of the memory chunk to the index calculated earlier.
@@ -383,13 +408,14 @@ impl StackAllocator {
     /// the `Drop` trait.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// let allocator = StackAllocator::with_capacity(100, 100); //100 bytes
     ///
     /// //Get the raw pointer to the bottom of the allocator's memory chunk.
-    /// let start_allocator = allocator.storage().as_ptr();
+    /// let start_allocator = allocator.storage_as_ptr();
     ///
     /// //Get the index of the first unused memory address.
     /// let index_current_top = allocator.marker();
@@ -406,20 +432,21 @@ impl StackAllocator {
     ///
     /// ```
     pub fn marker(&self) -> usize {
-        self.storage().fill()
+        self.storage.borrow().fill()
     }
 
     /// Returns the index of the first unused memory address of the `MemoryChunk` storing data implementing
     /// the `Copy` trait.
     ///
     /// # Example
-    /// ```
+    ///
+    /// ```rust
     /// use maskerad_memory_allocators::StackAllocator;
     ///
     /// let allocator = StackAllocator::with_capacity(100, 100); //100 bytes
     ///
     /// //Get the raw pointer to the bottom of the allocator's memory chunk.
-    /// let start_allocator = allocator.storage_copy().as_ptr();
+    /// let start_allocator = allocator.storage_copy_as_ptr();
     ///
     /// //Get the index of the first unused memory address.
     /// let index_current_top = allocator.marker_copy();
@@ -436,15 +463,17 @@ impl StackAllocator {
     ///
     /// ```
     pub fn marker_copy(&self) -> usize {
-        self.storage_copy().fill()
+        self.storage_copy.borrow().fill()
     }
 
     /// Reset the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing inside it.
     ///
     /// # Example
-    /// ```
-    /// use maskerad_memory_allocators::StackAllocator;
     ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = StackAllocator::with_capacity(100, 100); // 100 bytes.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -452,28 +481,34 @@ impl StackAllocator {
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     /// assert_ne!(allocator.marker(), 0);
     ///
     /// allocator.reset();
     ///
     /// //The MemoryChunk storing data implementing the `Drop` trait has been totally reset, and all its content has been dropped.
     /// assert_eq!(allocator.marker(), 0);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset(&self) {
         unsafe {
-            self.storage().destroy();
-            self.storage().set_fill(0);
+            self.storage.borrow().destroy();
+            self.storage.borrow().set_fill(0);
         }
     }
 
     /// Reset the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing inside it.
     ///
     /// # Example
-    /// ```
-    /// use maskerad_memory_allocators::StackAllocator;
     ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = StackAllocator::with_capacity(100, 100); // 100 bytes.
     ///
     /// //When nothing has been allocated, the first unused memory address is at index 0.
@@ -481,26 +516,32 @@ impl StackAllocator {
     ///
     /// let my_i32 = allocator.alloc(|| {
     ///     8 as i32
-    /// }).unwrap();
+    /// })?;
     /// assert_ne!(allocator.marker_copy(), 0);
     ///
     /// allocator.reset_copy();
     ///
     /// //The MemoryChunk storing data implementing the `Copy` has been totally reset.
     /// assert_eq!(allocator.marker_copy(), 0);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_copy(&self) {
-            self.storage_copy().set_fill(0);
+        self.storage_copy.borrow().set_fill(0);
     }
 
     /// Reset partially the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing between the marker and
     /// the first unused memory address of the `MemoryChunk`.
     ///
     /// # Example
-    /// ```
-    /// use maskerad_memory_allocators::StackAllocator;
     ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
     /// let allocator = StackAllocator::with_capacity(100, 100);
     ///
@@ -509,7 +550,7 @@ impl StackAllocator {
     ///
     /// let my_vec: &Vec<u8> = allocator.alloc(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// //After the allocation, get the index of the first unused memory address in the allocator.
     /// let index_current_top = allocator.marker();
@@ -517,7 +558,7 @@ impl StackAllocator {
     ///
     /// let my_vec_2: &Vec<u8> = allocator.alloc(|| {
     ///     Vec::with_capacity(10)
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker(), index_current_top);
     ///
@@ -527,21 +568,27 @@ impl StackAllocator {
     /// //the first unused memory address has been dropped.
     ///
     /// assert_eq!(allocator.marker(), index_current_top);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_to_marker(&self, marker: usize) {
         unsafe {
-            self.storage().destroy_to_marker(marker);
-            self.storage().set_fill(marker);
+            self.storage.borrow().destroy_to_marker(marker);
+            self.storage.borrow().set_fill(marker);
         }
     }
 
     /// Reset partially the `MemoryChunk` storing data implementing the `Copy` trait.
     ///
     /// # Example
-    /// ```
-    /// use maskerad_memory_allocators::StackAllocator;
     ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
     /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
     /// let allocator = StackAllocator::with_capacity(100, 100);
     ///
@@ -550,7 +597,7 @@ impl StackAllocator {
     ///
     /// let my_i32 = allocator.alloc(|| {
     ///     8 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// //After the allocation, get the index of the first unused memory address in the allocator.
     /// let index_current_top = allocator.marker_copy();
@@ -558,7 +605,7 @@ impl StackAllocator {
     ///
     /// let my_i32_2 = allocator.alloc(|| {
     ///     9 as i32
-    /// }).unwrap();
+    /// })?;
     ///
     /// assert_ne!(allocator.marker_copy(), index_current_top);
     ///
@@ -567,38 +614,47 @@ impl StackAllocator {
     /// //The memorychunk storing data implementing the Copy trait has been partially reset.
     ///
     /// assert_eq!(allocator.marker_copy(), index_current_top);
-    ///
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
     /// ```
     pub fn reset_to_marker_copy(&self, marker: usize) {
-            self.storage_copy().set_fill(marker);
+        self.storage_copy.borrow().set_fill(marker);
     }
 
     /// Returns the maximum capacity the `MemoryChunk` storing data implementing the `Drop` trait can hold.
     pub fn capacity(&self) -> usize {
-        self.storage().capacity()
+        self.storage.borrow().capacity()
     }
 
     /// Returns the maximum capacity the `MemoryChunk` storing data implementing the `Copy` trait can hold.
     pub fn capacity_copy(&self) -> usize {
-        self.storage_copy().capacity()
+        self.storage_copy.borrow().capacity()
     }
 
     /// Returns a raw pointer to the start of the memory storage used by the `MemoryChunk` storing data implementing the `Drop` trait.
     pub fn storage_as_ptr(&self) -> *const u8 {
-        self.storage().as_ptr()
+        self.storage.borrow().as_ptr()
     }
 
     /// Returns a raw pointer to the start of the memory storage used by the `MemoryChunk` storing data implementing the `Copy` trait.
     pub fn storage_copy_as_ptr(&self) -> *const u8 {
-        self.storage_copy().as_ptr()
+        self.storage_copy.borrow().as_ptr()
+    }
+
+    fn destroy_stack(&self) -> Result<(), BorrowError> {
+        unsafe {
+            self.storage.try_borrow()?.destroy();
+        }
+        Ok(())
     }
 }
 
 impl Drop for StackAllocator {
     fn drop(&mut self) {
-        unsafe {
-            self.storage().destroy();
-        }
+        self.destroy_stack().unwrap();
     }
 }
 
@@ -608,22 +664,18 @@ mod stack_allocator_test {
 
     //size : 4 bytes + 4 bytes alignment + 4 bytes + 4 bytes alignment + alignment-offset stuff -> ~16-20 bytes.
     struct Monster {
-        _hp :u32,
+        _hp: u32,
     }
 
     impl Monster {
         pub fn new(hp: u32) -> Self {
-            Monster {
-                _hp: hp,
-            }
+            Monster { _hp: hp }
         }
     }
 
     impl Default for Monster {
         fn default() -> Self {
-            Monster {
-                _hp: 1,
-            }
+            Monster { _hp: 1 }
         }
     }
 
@@ -639,7 +691,7 @@ mod stack_allocator_test {
             //create a StackAllocator with the specified size.
             let alloc = StackAllocator::with_capacity(200, 200);
             let start_chunk = alloc.storage_as_ptr();
-            let first_unused_mem_addr = start_chunk.offset(alloc.storage().fill() as isize);
+            let first_unused_mem_addr = start_chunk.offset(alloc.marker() as isize);
 
             assert_eq!(start_chunk, first_unused_mem_addr);
         }
@@ -650,13 +702,11 @@ mod stack_allocator_test {
         //We allocate 200 bytes of memory.
         let alloc = StackAllocator::with_capacity(200, 200);
 
-        let _my_monster = alloc.alloc(|| {
-            Monster::new(1)
-        }).unwrap();
+        let _my_monster = alloc.alloc(|| Monster::new(1)).unwrap();
 
         unsafe {
             let start_alloc = alloc.storage_as_ptr();
-            let top_stack_index = alloc.storage().fill();
+            let top_stack_index = alloc.marker();
             let top_stack = start_alloc.offset(top_stack_index as isize);
             assert_ne!(start_alloc, top_stack);
         }
@@ -666,13 +716,11 @@ mod stack_allocator_test {
     #[test]
     fn test_reset() {
         let alloc = StackAllocator::with_capacity(200, 200);
-        let _my_monster = alloc.alloc(|| {
-            Monster::new(1)
-        }).unwrap();
+        let _my_monster = alloc.alloc(|| Monster::new(1)).unwrap();
 
         let top_stack_index = alloc.marker();
         let start_alloc = alloc.storage_as_ptr();
-        let mut current_top_stack_index = alloc.storage().fill();
+        let mut current_top_stack_index = alloc.marker();
 
         unsafe {
             let top_stack = start_alloc.offset(top_stack_index as isize);
@@ -680,11 +728,9 @@ mod stack_allocator_test {
             assert_eq!(current_top_stack, top_stack);
         }
 
-        let _another_monster = alloc.alloc(|| {
-            Monster::default()
-        }).unwrap();
+        let _another_monster = alloc.alloc(|| Monster::default()).unwrap();
 
-        current_top_stack_index = alloc.storage().fill();
+        current_top_stack_index = alloc.marker();
 
         unsafe {
             let top_stack = start_alloc.offset(top_stack_index as isize);
@@ -696,7 +742,7 @@ mod stack_allocator_test {
 
         //another_monster prints "i'm dying". The drop function is called !
 
-        current_top_stack_index = alloc.storage().fill();
+        current_top_stack_index = alloc.marker();
         unsafe {
             let top_stack = start_alloc.offset(top_stack_index as isize);
             let current_top_stack = start_alloc.offset(current_top_stack_index as isize);
@@ -707,7 +753,7 @@ mod stack_allocator_test {
 
         //my_monster prints "i'm dying". The drop function is called !
 
-        current_top_stack_index = alloc.storage().fill();
+        current_top_stack_index = alloc.marker();
         unsafe {
             let top_stack = start_alloc.offset(top_stack_index as isize);
             let current_top_stack = start_alloc.offset(current_top_stack_index as isize);
@@ -716,4 +762,3 @@ mod stack_allocator_test {
         }
     }
 }
-
