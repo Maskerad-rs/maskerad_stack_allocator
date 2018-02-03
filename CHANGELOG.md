@@ -96,3 +96,19 @@ Updated the documentation.
 #### version 4.0.1
 
 Updated the documentation (formatting).
+
+#### version 5.0.0
+
+Removed the DoubleEndedAllocator. Making a tuple (StackAllocator, StackAllocator) is far better.
+
+Added optional serde support to MemoryChunk, StackAllocator and DoubleBufferedStackAllocator.
+
+Reworked the documentation.
+
+Added alloc_unchecked() and alloc_mut_unchecked() to the StackAllocator and DoubleBufferedAllocator.
+Those functions don't perform any check with trying to store data in memory.
+
+AllocationError implement Send and Sync now.
+
+The MemoryChunk structure and the utils module have been hidden from the public API. They are not needed
+to use the library and are implementation details.

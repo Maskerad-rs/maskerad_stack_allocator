@@ -11,9 +11,11 @@ use allocation_error::AllocationResult;
 /// A double-buffered allocator.
 ///
 /// This allocator is a wrapper around two `StackAllocator`s.
-/// It works like a `StackAllocator`, and allows you to swap the buffers.
 ///
-/// Ref to the `StackAllocator` documentation for more information.
+/// It works like a `StackAllocator`, and allows you to swap the buffers. Their APIs are the same,
+/// all the functions of the `DoubleBufferedAllocator` call the functions of the active `StackAllocator`.
+///
+/// Refer to the `StackAllocator` documentation for more information.
 ///
 /// # Example
 ///
@@ -57,8 +59,8 @@ pub struct DoubleBufferedAllocator {
 impl DoubleBufferedAllocator {
     /// Create a DoubleBufferedAllocator with the given capacity (in bytes).
     ///
-    /// The first capacity is for the `MemoryChunk` holding data implementing the `Drop` trait,
-    /// the second is for the `MemoryChunk` holding data implementing the `Copy` trait.
+    /// The first capacity is for the memory storage holding data implementing the `Drop` trait,
+    /// the second is for the memory storage holding data implementing the `Copy` trait.
     ///
     /// # Example
     ///
@@ -68,10 +70,8 @@ impl DoubleBufferedAllocator {
     /// # fn try_main() -> Result<(), Box<Error>> {
     /// let allocator = DoubleBufferedAllocator::with_capacity(100, 50);
     ///
-    /// assert_eq!(allocator.active_buffer().capacity(), 100);
-    /// assert_eq!(allocator.active_buffer().capacity_copy(), 50);
-    /// assert_eq!(allocator.inactive_buffer().capacity(), 100);
-    /// assert_eq!(allocator.inactive_buffer().capacity_copy(), 50);
+    /// assert_eq!(allocator.capacity(), 100);
+    /// assert_eq!(allocator.capacity_copy(), 50);
     /// # Ok(())
     /// # }
     /// # fn main() {
@@ -90,8 +90,8 @@ impl DoubleBufferedAllocator {
 
     /// Allocates data in the active buffer, returning a mutable reference to the allocated data.
     ///
-    /// If the allocated data implements `Drop`, it will be placed in the `MemoryChunk` storing data implementing the `Drop` trait.
-    /// Otherwise, it will be placed in the other `MemoryChunk`.
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
     ///
     /// # Panic
     /// This function will panic if the allocation exceeds the maximum storage capacity of the active allocator.
@@ -103,14 +103,29 @@ impl DoubleBufferedAllocator {
         self.active_buffer().alloc_mut(op)
     }
 
+    /// Allocates data in the active buffer, returning a mutable reference to the allocated data.
+    ///
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
+    ///
+    /// # Warning
+    /// This function doesn't return an error if the allocated data doesn't fit in the `StackAllocator`'s remaining capacity,
+    /// It doesn't perform any check.
+    ///
+    /// Use if you now that the data will fit into memory and you can't afford the checks.
+    pub fn alloc_mut_unchecked<T, F>(&self, op: F) -> &mut T
+        where F: FnOnce() -> T
+    {
+        self.active_buffer().alloc_mut_unchecked(op)
+    }
+
     /// Allocates data in the active buffer, returning an immutable reference to the allocated data.
     ///
-    /// If the allocated data implements `Drop`, it will be placed in the `MemoryChunk` storing data implementing the `Drop` trait.
-    /// Otherwise, it will be placed in the other `MemoryChunk`.
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
     ///
     /// # Panic
     /// This function will panic if the allocation exceeds the maximum storage capacity of the active allocator.
-    ///
     pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
     where
         F: FnOnce() -> T,
@@ -118,44 +133,56 @@ impl DoubleBufferedAllocator {
         self.active_buffer().alloc(op)
     }
 
-    /// Reset the active buffer's `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing inside it.
+    /// Allocates data in the active buffer, returning an immutable reference to the allocated data.
+    ///
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
+    ///
+    /// # Warning
+    /// This function doesn't return an error if the allocated data doesn't fit in the active buffer's remaining capacity,
+    /// It doesn't perform any check.
+    ///
+    /// Use if you now that the data will fit into memory and you can't afford the checks.
+    pub fn alloc_unchecked<T, F>(&self, op: F) -> &T
+        where
+            F: FnOnce() -> T,
+    {
+        self.active_buffer().alloc_unchecked(op)
+    }
+
+    /// Reset the active buffer's memory storage storing data implementing the `Drop` trait, dropping all the content residing inside it.
     pub fn reset(&self) {
         self.active_buffer().reset();
     }
 
-    /// Reset the active buffer's `MemoryChunk` storing data implementing the `Copy` trait.
+    /// Reset the active buffer's memory storage storing data implementing the `Copy` trait.
     pub fn reset_copy(&self) {
         self.active_buffer().reset_copy();
     }
 
     /// Returns an immutable reference to the active `StackAllocator`.
-    pub fn active_buffer(&self) -> &StackAllocator {
+    fn active_buffer(&self) -> &StackAllocator {
         &self.buffers[self.current as usize]
     }
 
-    /// Returns an immutable reference to the inactive `StackAllocator`.
-    pub fn inactive_buffer(&self) -> &StackAllocator {
-        &self.buffers[!self.current as usize]
-    }
-
-    /// Reset partially the active buffer's `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing between the marker and
-    /// the first unused memory address of the `MemoryChunk`.
+    /// Reset partially the active buffer's memory storage storing data implementing the `Drop` trait, dropping all the content residing between the marker and
+    /// the first unused memory address of the memory storage.
     pub fn reset_to_marker(&self, marker: usize) {
         self.active_buffer().reset_to_marker(marker);
     }
 
-    /// Reset partially the active buffer's `MemoryChunk` storing data implementing the `Copy` trait.
+    /// Reset partially the active buffer's memory storage storing data implementing the `Copy` trait.
     pub fn reset_to_marker_copy(&self, marker: usize) {
         self.active_buffer().reset_to_marker_copy(marker)
     }
 
-    /// Returns the index of the first unused memory address of the active buffer's `MemoryChunk` storing data implementing
+    /// Returns the index of the first unused memory address of the active buffer's memory storage storing data implementing
     /// the `Drop` trait.
     pub fn marker(&self) -> usize {
         self.active_buffer().marker()
     }
 
-    /// Returns the index of the first unused memory address of the active buffer's `MemoryChunk` storing data implementing
+    /// Returns the index of the first unused memory address of the active buffer's memory storage storing data implementing
     /// the `Copy` trait.
     pub fn marker_copy(&self) -> usize {
         self.active_buffer().marker_copy()
@@ -164,6 +191,26 @@ impl DoubleBufferedAllocator {
     /// Swap the buffers. The inactive one becomes the active.
     pub fn swap_buffers(&mut self) {
         self.current = !self.current;
+    }
+
+    /// Returns the maximum capacity the memory storage storing data implementing the `Drop` trait can hold.
+    pub fn capacity(&self) -> usize {
+        self.active_buffer().capacity()
+    }
+
+    /// Returns the maximum capacity the memory storage storing data implementing the `Copy` trait can hold.
+    pub fn capacity_copy(&self) -> usize {
+        self.active_buffer().capacity_copy()
+    }
+
+    /// Returns a raw pointer to the start of the memory storage used by the memory storage storing data implementing the `Drop` trait.
+    pub fn storage_as_ptr(&self) -> *const u8 {
+        self.active_buffer().storage_as_ptr()
+    }
+
+    /// Returns a raw pointer to the start of the memory storage used by the memory storage storing data implementing the `Copy` trait.
+    pub fn storage_copy_as_ptr(&self) -> *const u8 {
+        self.active_buffer().storage_copy_as_ptr()
     }
 }
 
@@ -191,7 +238,6 @@ mod double_buffer_allocator_test {
     fn new() {
         let alloc = DoubleBufferedAllocator::with_capacity(100, 100);
         assert_eq!(alloc.active_buffer().capacity(), 100);
-        assert_eq!(alloc.inactive_buffer().capacity(), 100);
     }
 
     #[test]
@@ -199,48 +245,35 @@ mod double_buffer_allocator_test {
         let alloc = DoubleBufferedAllocator::with_capacity(100, 100);
 
         let start_chunk_active_buffer = alloc.active_buffer().storage_as_ptr();
-        let start_chunk_inactive_buffer = alloc.inactive_buffer().storage_as_ptr();
 
         let index_active_buffer_top_stack = alloc.active_buffer().marker();
-        let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
 
         unsafe {
             let active_buffer_top_stack =
                 start_chunk_active_buffer.offset(index_active_buffer_top_stack as isize);
-            let inactive_buffer_top_stack =
-                start_chunk_inactive_buffer.offset(index_inactive_buffer_top_stack as isize);
 
             assert_eq!(start_chunk_active_buffer, active_buffer_top_stack);
-            assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
         }
 
         let _my_monster = alloc.alloc(|| Monster::default()).unwrap();
 
         let index_active_buffer_top_stack = alloc.active_buffer().marker();
-        let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
 
         unsafe {
             let active_buffer_top_stack =
                 start_chunk_active_buffer.offset(index_active_buffer_top_stack as isize);
-            let inactive_buffer_top_stack =
-                start_chunk_inactive_buffer.offset(index_inactive_buffer_top_stack as isize);
 
             assert_ne!(start_chunk_active_buffer, active_buffer_top_stack);
-            assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
         }
 
         alloc.reset();
         let index_active_buffer_top_stack = alloc.active_buffer().marker();
-        let index_inactive_buffer_top_stack = alloc.inactive_buffer().marker();
 
         unsafe {
             let active_buffer_top_stack =
                 start_chunk_active_buffer.offset(index_active_buffer_top_stack as isize);
-            let inactive_buffer_top_stack =
-                start_chunk_inactive_buffer.offset(index_inactive_buffer_top_stack as isize);
 
             assert_eq!(start_chunk_active_buffer, active_buffer_top_stack);
-            assert_eq!(start_chunk_inactive_buffer, inactive_buffer_top_stack);
         }
     }
 

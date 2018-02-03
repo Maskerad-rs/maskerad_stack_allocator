@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use core::ptr;
-use std::cell::{BorrowError, Ref, RefCell};
+use std::cell::{BorrowError, RefCell};
 use std::mem;
 
 use allocation_error::{AllocationError, AllocationResult};
@@ -16,52 +16,55 @@ use std::intrinsics::needs_drop;
 
 /// A stack-based allocator.
 ///
-/// It manages two `MemoryChunk`s to:
+/// It manages two memory storages to:
 ///
 /// - Allocate bytes in a stack-like fashion.
 ///
 /// - Store different types of objects in the same storage.
 ///
-/// - Drop the content of the MemoryChunk when needed.
+/// - Drop the content of the storage when needed.
 ///
-/// One `MemoryChunk` is used for data implementing the `Drop` trait, the other is used for data implementing
+/// One storage is used for data implementing the `Drop` trait, the other is used for data implementing
 /// the `Copy` trait. A structure implementing the `Copy` trait cannot implement the `Drop` trait. In order to
 /// drop data implementing the `Drop` trait, we need to store its vtable next to it in memory.
 ///
-/// # Instantiation
-/// When instantiated, the memory chunk pre-allocate the given number of bytes for each `MemoryChunk`.
+/// # Details
 ///
-/// # Allocation
+/// ## Instantiation
+/// When instantiated, the `StackAllocator` pre-allocate the given number of bytes for each memory storage.
+///
+///
+/// ## Allocation
 /// When an object is allocated in memory, the allocator:
 ///
-/// - Check if the allocated object needs to be dropped, and choose which `MemoryChunk` to use according to this information,
+/// - Check if the allocated object needs to be dropped, and choose which memory storage to use according to this information,
 ///
-/// - Asks a pointer to a memory address to the corresponding memory chunk,
+/// - Asks a pointer to a memory address to the corresponding memory storage,
 ///
 /// - Place the object in this memory address,
 ///
-/// - Update the first unused memory address of the memory chunk according to an offset,
+/// - Update the first unused memory address of the memory storage according to an offset,
 ///
-/// - And return an immutable/mutable reference to the object which has been placed in the memory chunk.
+/// - And return an immutable/mutable reference to the object which has been placed in the memory storage.
 ///
-/// This offset is calculated by the size of the object, the size of a `TypeDescription` structure (if the object implement the `Drop` trait),
+/// This offset is calculated by the size of the object, a function pointer to its `Drop` implementation (if the object implement the `Drop` trait),
 /// its memory-alignment and an offset to align the object in memory.
 ///
-/// # Roll-back
+/// ## Roll-back
 ///
-/// This structure allows you to get a **marker**, the index to the first unused memory address of a memory chunk. A stack allocator can *reset* a memory chunk to a marker,
-/// or reset a memory chunk entirely.
+/// This structure allows you to get a **marker**, the index to the first unused memory address of a memory storage. A stack allocator can *reset* a memory storage to a marker,
+/// or reset a memory storage entirely.
 ///
-/// When a memory chunk is reset to a marker, it will:
+/// When a memory storage is reset to a marker, it will:
 ///
 /// - Drop all the content lying between the marker and the first unused memory address, if it holds data implementing the `Drop` trait,
 ///
 /// - Set the first unused memory address to the marker.
 ///
 ///
-/// When a memory chunk is reset completely, it will:
+/// When a memory storage is reset completely, it will:
 ///
-/// - Drop everything, if ti holds data implementing the `Drop` trait,
+/// - Drop everything, if it holds data implementing the `Drop` trait,
 ///
 /// - Set the first unused memory address to the bottom of its stack.
 ///
@@ -106,8 +109,8 @@ pub struct StackAllocator {
 impl StackAllocator {
     /// Creates a StackAllocator with the given capacities, in bytes.
     ///
-    /// The first capacity is for the `MemoryChunk` holding data implementing the `Drop` trait,
-    /// the second is for the `MemoryChunk` holding data implementing the `Copy` trait.
+    /// The first capacity is for the memory storage holding data implementing the `Drop` trait,
+    /// the second is for the memory storage holding data implementing the `Copy` trait.
     /// # Example
     ///
     /// ```rust
@@ -126,8 +129,8 @@ impl StackAllocator {
 
     /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
     ///
-    /// If the allocated data implements `Drop`, it will be placed in the `MemoryChunk` storing data implementing the `Drop` trait.
-    /// Otherwise, it will be placed in the other `MemoryChunk`.
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
     ///
     /// # Error
     /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
@@ -150,7 +153,6 @@ impl StackAllocator {
     /// #   try_main().unwrap();
     /// # }
     /// ```
-    #[inline]
     pub fn alloc_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
     where
         F: FnOnce() -> T,
@@ -164,7 +166,53 @@ impl StackAllocator {
         }
     }
 
-    /// The function actually writing data in the memory chunk
+    /// Allocates data in the allocator's memory, returning a mutable reference to the allocated data.
+    ///
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
+    ///
+    /// # Warning
+    /// This function doesn't return an error if the allocated data doesn't fit in the `StackAllocator`'s remaining capacity,
+    /// It doesn't perform any check.
+    ///
+    /// Use if you now that the data will fit into memory and you can't afford the checks.
+    ///
+    /// # Example
+    /// ```
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
+    /// let allocator = StackAllocator::with_capacity(100, 100);
+    ///
+    /// // An i32 is 4 bytes, has a 4-byte alignment and doesn't have a destructor.
+    /// // It will, in the worst case take 8 bytes in the stack memory.
+    /// // The copy storage of the stack can store up to 100 bytes, so it's fine.
+    ///
+    /// let my_i32 = allocator.alloc_mut_unchecked(|| {
+    ///     26 as i32
+    /// });
+    ///
+    /// assert_eq!(my_i32, &mut 26);
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
+    /// ```
+    pub fn alloc_mut_unchecked<T, F>(&self, op: F) -> &mut T
+        where
+            F: FnOnce() -> T,
+    {
+        unsafe {
+            if needs_drop::<T>() {
+                self.alloc_non_copy_mut_unchecked(op)
+            } else {
+                self.alloc_copy_mut_unchecked(op)
+            }
+        }
+    }
+
+    /// The function actually writing data in the memory storage
     fn alloc_non_copy_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
     where
         F: FnOnce() -> T,
@@ -197,6 +245,38 @@ impl StackAllocator {
         }
     }
 
+    fn alloc_non_copy_mut_unchecked<T, F>(&self, op: F) -> &mut T
+        where
+            F: FnOnce() -> T,
+    {
+        unsafe {
+            //Get the type description of the type T (get its vtable).
+            let type_description = utils::get_type_description::<T>();
+
+            //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            let (type_description_ptr, ptr) =
+                self.alloc_non_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
+
+            //Cast them.
+            let type_description_ptr = type_description_ptr as *mut usize;
+            let ptr = ptr as *mut T;
+
+            //write in our type description along with a bit indicating that the object has *not*
+            //been initialized yet.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
+
+            //Initialize the object.
+            ptr::write(&mut (*ptr), op());
+
+            //Now that we are done, update the type description to indicate
+            //that the object is there.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
+
+            //Return a mutable reference to the object.
+            &mut *ptr
+        }
+    }
+
     //Functions for the copyable part of the stack allocator.
     fn alloc_copy_mut<T, F>(&self, op: F) -> AllocationResult<&mut T>
     where
@@ -217,10 +297,29 @@ impl StackAllocator {
         }
     }
 
+    fn alloc_copy_mut_unchecked<T, F>(&self, op: F) -> &mut T
+        where
+            F: FnOnce() -> T,
+    {
+        unsafe {
+            //Get an aligned raw pointer to place the object in it.
+            let ptr = self.alloc_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
+
+            //cast this raw pointer to the type of the object.
+            let ptr = ptr as *mut T;
+
+            //Write the data in the memory location.
+            ptr::write(&mut (*ptr), op());
+
+            //return a mutable reference to this pointer.
+            &mut *ptr
+        }
+    }
+
     /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
     ///
-    /// If the allocated data implements `Drop`, it will be placed in the `MemoryChunk` storing data implementing the `Drop` trait.
-    /// Otherwise, it will be placed in the other `MemoryChunk`.
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
     ///
     /// # Error
     /// This function will return an error if the allocation exceeds the maximum storage capacity of the allocator.
@@ -244,7 +343,6 @@ impl StackAllocator {
     /// #   try_main().unwrap();
     /// # }
     /// ```
-    #[inline]
     pub fn alloc<T, F>(&self, op: F) -> AllocationResult<&T>
     where
         F: FnOnce() -> T,
@@ -258,10 +356,56 @@ impl StackAllocator {
         }
     }
 
+    /// Allocates data in the allocator's memory, returning an immutable reference to the allocated data.
+    ///
+    /// If the allocated data implements `Drop`, it will be placed in the memory storage storing data implementing the `Drop` trait.
+    /// Otherwise, it will be placed in the other memory storage.
+    ///
+    /// # Warning
+    /// This function doesn't return an error if the allocated data doesn't fit in the `StackAllocator`'s remaining capacity,
+    /// It doesn't perform any check.
+    ///
+    /// Use if you now that the data will fit into memory and you can't afford the checks.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// # use std::error::Error;
+    /// # fn try_main() -> Result<(), Box<Error>> {
+    /// let allocator = StackAllocator::with_capacity(100, 100);
+    ///
+    /// // An i32 is 4 bytes, has a 4-byte alignment and doesn't have a destructor.
+    /// // It will, in the worst case take 8 bytes in the stack memory.
+    /// // The copy storage of the stack can store up to 100 bytes, so it's fine.
+    ///
+    /// let my_i32 = allocator.alloc_unchecked(|| {
+    ///     26 as i32
+    /// });
+    ///
+    /// assert_eq!(my_i32, &26);
+    /// # Ok(())
+    /// # }
+    /// # fn main() {
+    /// #   try_main().unwrap();
+    /// # }
+    /// ```
+    pub fn alloc_unchecked<T, F>(&self, op: F) -> &T
+        where
+            F: FnOnce() -> T,
+    {
+        unsafe {
+            if needs_drop::<T>() {
+                self.alloc_non_copy_unchecked(op)
+            } else {
+                self.alloc_copy_unchecked(op)
+            }
+        }
+    }
+
     //Functions for the non-copyable part of the arena.
 
-    /// The function actually writing data in the memory chunk
-    #[inline]
+    /// The function actually writing data in the memory storage
     fn alloc_non_copy<T, F>(&self, op: F) -> AllocationResult<&T>
     where
         F: FnOnce() -> T,
@@ -294,6 +438,38 @@ impl StackAllocator {
         }
     }
 
+    fn alloc_non_copy_unchecked<T, F>(&self, op: F) -> &T
+        where
+            F: FnOnce() -> T,
+    {
+        unsafe {
+            //Get the type description of the type T (get its vtable).
+            let type_description = utils::get_type_description::<T>();
+
+            //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            let (type_description_ptr, ptr) =
+                self.alloc_non_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
+
+            //Cast them.
+            let type_description_ptr = type_description_ptr as *mut usize;
+            let ptr = ptr as *mut T;
+
+            //write in our type description along with a bit indicating that the object has *not*
+            //been initialized yet.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
+
+            //Initialize the object.
+            ptr::write(&mut (*ptr), op());
+
+            //Now that we are done, update the type description to indicate
+            //that the object is there.
+            *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
+
+            //Return an immutable reference to the object.
+            &*ptr
+        }
+    }
+
     fn alloc_copy<T, F>(&self, op: F) -> AllocationResult<&T>
     where
         F: FnOnce() -> T,
@@ -313,9 +489,27 @@ impl StackAllocator {
         }
     }
 
-    /// The function asking the memory chunk to give us raw pointers to memory locations and update
+    fn alloc_copy_unchecked<T, F>(&self, op: F) -> &T
+        where
+            F: FnOnce() -> T,
+    {
+        unsafe {
+            //Get an aligned raw pointer to place the object in it.
+            let ptr = self.alloc_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
+
+            //cast this raw pointer to the type of the object.
+            let ptr = ptr as *mut T;
+
+            //Write the data in the memory location.
+            ptr::write(&mut (*ptr), op());
+
+            //return an immutable reference to this pointer.
+            &*ptr
+        }
+    }
+
+    /// The function asking the memory storage to give us raw pointers to memory locations and update
     /// the current top of the stack.
-    #[inline]
     fn alloc_non_copy_inner(
         &self,
         n_bytes: usize,
@@ -374,6 +568,57 @@ impl StackAllocator {
         }
     }
 
+    fn alloc_non_copy_inner_unchecked(
+        &self,
+        n_bytes: usize,
+        align: usize,
+    ) -> (*const u8, *const u8) {
+        let non_copy_storage = self.storage.borrow();
+
+        //Get the index of the first unused byte in the memory chunk.
+        let fill = non_copy_storage.fill();
+
+        //Get the index of where we'll write the type description data
+        //(the first unused byte in the memory chunk).
+        let type_description_start = fill;
+
+        // Get the index of where the object should reside (unaligned location actually).
+        let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
+
+        //With the index to the unaligned memory address, determine the index to
+        //the aligned memory address where the object will reside,
+        //according to its memory alignment.
+        let start = utils::round_up(after_type_description, align);
+
+        //Determine the index of the next aligned memory address for a type description, according to the size of the object
+        //and the memory alignment of a type description.
+        let end = utils::round_up(
+            start + n_bytes,
+            mem::align_of::<*const utils::TypeDescription>(),
+        );
+
+        //Update the current top of the stack.
+        //The first unused memory address is at index 'end',
+        //where the next type description would be written
+        //if an allocation was asked.
+        non_copy_storage.set_fill(end);
+
+        unsafe {
+            // Get a raw pointer to the start of our MemoryChunk's RawVec
+            let start_storage = non_copy_storage.as_ptr();
+
+            (
+                //From this raw pointer, get the correct raw pointers with
+                //the indices we calculated earlier.
+
+                //The raw pointer to the type description of the object.
+                start_storage.offset(type_description_start as isize),
+                //The raw pointer to the object.
+                start_storage.offset(start as isize),
+            )
+        }
+    }
+
     fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
         //borrow mutably the memory chunk used by the allocator.
         let copy_storage = self.storage_copy.borrow();
@@ -404,7 +649,30 @@ impl StackAllocator {
         }
     }
 
-    /// Returns the index of the first unused memory address of the `MemoryChunk` storing data implementing
+    fn alloc_copy_inner_unchecked(&self, n_bytes: usize, align: usize) -> *const u8 {
+        //borrow mutably the memory chunk used by the allocator.
+        let copy_storage = self.storage_copy.borrow();
+
+        //Get the index of the first unused memory address in the memory chunk.
+        let fill = copy_storage.fill();
+
+        //Get the index of the aligned memory address, which will be returned.
+        let start = utils::round_up(fill, align);
+
+        //Get the index of the future first unused memory address, according to the size of the object.
+        let end = start + n_bytes;
+
+        //Set the first unused memory address of the memory chunk to the index calculated earlier.
+        copy_storage.set_fill(end);
+
+        unsafe {
+            //Return the raw pointer to the aligned memory location, which will be used to place
+            //the object in the allocator.
+            copy_storage.as_ptr().offset(start as isize)
+        }
+    }
+
+    /// Returns the index of the first unused memory address of the memory storage storing data implementing
     /// the `Drop` trait.
     ///
     /// # Example
@@ -435,7 +703,7 @@ impl StackAllocator {
         self.storage.borrow().fill()
     }
 
-    /// Returns the index of the first unused memory address of the `MemoryChunk` storing data implementing
+    /// Returns the index of the first unused memory address of the memory storage storing data implementing
     /// the `Copy` trait.
     ///
     /// # Example
@@ -466,7 +734,7 @@ impl StackAllocator {
         self.storage_copy.borrow().fill()
     }
 
-    /// Reset the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing inside it.
+    /// Reset the memory storage storing data implementing the `Drop` trait, dropping all the content residing inside it.
     ///
     /// # Example
     ///
@@ -501,7 +769,7 @@ impl StackAllocator {
         }
     }
 
-    /// Reset the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing inside it.
+    /// Reset the memory storage storing data implementing the `Drop` trait, dropping all the content residing inside it.
     ///
     /// # Example
     ///
@@ -533,8 +801,8 @@ impl StackAllocator {
         self.storage_copy.borrow().set_fill(0);
     }
 
-    /// Reset partially the `MemoryChunk` storing data implementing the `Drop` trait, dropping all the content residing between the marker and
-    /// the first unused memory address of the `MemoryChunk`.
+    /// Reset partially the memory storage storing data implementing the `Drop` trait, dropping all the content residing between the marker and
+    /// the first unused memory address of the memory storage.
     ///
     /// # Example
     ///
@@ -581,7 +849,7 @@ impl StackAllocator {
         }
     }
 
-    /// Reset partially the `MemoryChunk` storing data implementing the `Copy` trait.
+    /// Reset partially the memory storage storing data implementing the `Copy` trait.
     ///
     /// # Example
     ///
@@ -624,26 +892,63 @@ impl StackAllocator {
         self.storage_copy.borrow().set_fill(marker);
     }
 
-    /// Returns the maximum capacity the `MemoryChunk` storing data implementing the `Drop` trait can hold.
+    /// Returns the maximum capacity the memory storage storing data implementing the `Drop` trait can hold.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
+    /// let allocator = StackAllocator::with_capacity(100, 50);
+    /// assert_eq!(allocator.capacity(), 100);
+    /// ```
     pub fn capacity(&self) -> usize {
         self.storage.borrow().capacity()
     }
 
-    /// Returns the maximum capacity the `MemoryChunk` storing data implementing the `Copy` trait can hold.
+    /// Returns the maximum capacity the memory storage storing data implementing the `Copy` trait can hold.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
+    /// let allocator = StackAllocator::with_capacity(100, 50);
+    /// assert_eq!(allocator.capacity_copy(), 50);
+    /// ```
     pub fn capacity_copy(&self) -> usize {
         self.storage_copy.borrow().capacity()
     }
 
-    /// Returns a raw pointer to the start of the memory storage used by the `MemoryChunk` storing data implementing the `Drop` trait.
+    /// Returns a raw pointer to the start of the memory storage storing data implementing the `Drop` trait.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
+    /// let allocator = StackAllocator::with_capacity(100, 50);
+    /// let ptr = allocator.storage_as_ptr();
+    /// ```
     pub fn storage_as_ptr(&self) -> *const u8 {
         self.storage.borrow().as_ptr()
     }
 
-    /// Returns a raw pointer to the start of the memory storage used by the `MemoryChunk` storing data implementing the `Copy` trait.
+    /// Returns a raw pointer to the start of the memory storage storing data implementing the `Copy` trait.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use maskerad_memory_allocators::StackAllocator;
+    /// // 100 bytes for data implementing Drop, 100 bytes for Data implementing Copy.
+    /// let allocator = StackAllocator::with_capacity(100, 50);
+    /// let ptr = allocator.storage_copy_as_ptr();
+    /// ```
     pub fn storage_copy_as_ptr(&self) -> *const u8 {
         self.storage_copy.borrow().as_ptr()
     }
 
+    /// Drop all the objects implementing the `Drop` trait.
     fn destroy_stack(&self) -> Result<(), BorrowError> {
         unsafe {
             self.storage.try_borrow()?.destroy();

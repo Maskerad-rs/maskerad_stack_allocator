@@ -9,8 +9,6 @@
 //!
 //! - a **stack-based** allocator.
 //!
-//! - a **double-ended** allocator.
-//!
 //! - a **double-buffered** allocator.
 //!
 //! Its primary purpose is to prevent memory fragmentation.
@@ -56,9 +54,46 @@
 //! #   try_main().unwrap();
 //! # }
 //! ```
+//!
+//! A `DoubleBufferedAllocator` can be used as a "two-frames" buffer.
+//!
+//! ```rust
+//! use maskerad_memory_allocators::DoubleBufferedAllocator;
+//! # use std::error::Error;
+//! # fn try_main() -> Result<(), Box<Error>> {
+//! //100 bytes for data implementing the Drop trait, 100 bytes for data implementing the `Copy` trait.
+//! let mut allocator = DoubleBufferedAllocator::with_capacity(100, 100);
+//! let mut closed = false;
+//!
+//! while !closed {
+//!     //swap the active and inactive buffers of the allocator.
+//!     allocator.swap_buffers();
+//!
+//!     //clear the newly active buffer.
+//!     allocator.reset();
+//!
+//!     //allocate with the current buffer, leaving the data in the inactive buffer intact.
+//!     //You can use this data during this frame, or the next frame.
+//!     let my_vec: &Vec<u8> = allocator.alloc(|| {
+//!         Vec::with_capacity(10)
+//!     })?;
+//!
+//!     assert!(my_vec.is_empty());
+//!
+//!     closed = true;
+//! }
+//! # Ok(())
+//! # }
+//! # fn main() {
+//! #   try_main().unwrap();
+//! # }
+//! ```
+//!
 #![feature(alloc)]
 #![feature(raw)]
 #![feature(core_intrinsics)]
+
+#![doc(html_root_url = "https://docs.rs/maskerad_memory_allocator/5.0.0")]
 
 #[cfg(feature = "serde")]
 #[macro_use]
@@ -71,10 +106,9 @@ mod stacks;
 mod smart_pointers;
 mod pools;
 
-pub mod memory_chunk;
+mod memory_chunk;
 pub mod allocation_error;
-pub mod utils;
+mod utils;
 
 pub use stacks::stack_allocator::StackAllocator;
-pub use stacks::double_ended_allocator::DoubleEndedStackAllocator;
 pub use stacks::double_buffered_allocator::DoubleBufferedAllocator;

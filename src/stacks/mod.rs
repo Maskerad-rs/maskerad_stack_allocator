@@ -6,5 +6,4 @@
 // copied, modified, or distributed except according to those terms.
 
 pub mod double_buffered_allocator;
-pub mod double_ended_allocator;
 pub mod stack_allocator;
