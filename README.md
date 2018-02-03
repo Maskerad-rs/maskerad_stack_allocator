@@ -26,13 +26,6 @@ It is a structure holding two stack-based allocators. One is active, the other i
 When we allocate/reset with this allocator, the active stack-based allocator allocates/reset memory.
 We can swap the allocators, the inactive one becomes active.
 
-- a **double-ended** allocator
-
-It works like a stack-based allocator, but allocations can occur on both sides. *Technically* it doesn't work
-like that, but that's the idea.
-
-All those type of allocators are available for structures implementing the **Copy** trait **OR** the **Drop** trait.
-
 This library was made to **prevent memory fragmentation**. The allocators preallocate memory from the heap,
 and we use those allocators to create objects.
 
