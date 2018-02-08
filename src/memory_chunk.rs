@@ -36,6 +36,7 @@ pub struct MemoryChunk {
 impl MemoryChunk {
     /// Creates a new memory chunk, allocating the given number of bytes.
     pub fn new(size: usize) -> Self {
+        debug!("Creating a new memory chunk of {} bytes in size.", size);
         MemoryChunk {
             storage: RawVec::with_capacity(size),
             fill: Cell::new(0),
@@ -44,31 +45,37 @@ impl MemoryChunk {
 
     /// Returns the index of the first unused byte in the memory storage of the chunk.
     pub fn fill(&self) -> usize {
+        debug!("Getting the first unused byte of memory of the memory chunk.");
         self.fill.get()
     }
 
     /// Set the index of the first unused byte in the memory storage of the chunk.
     pub fn set_fill(&self, first_unused_byte: usize) {
+        debug!("Setting the first unused byte of memory of the memory chunk to {}", first_unused_byte);
         self.fill.set(first_unused_byte)
     }
 
     /// Returns the maximal number of bytes the chunk can store.
     pub fn capacity(&self) -> usize {
+        debug!("Getting the maximum capacity in byte of the memory chunk.");
         self.storage.cap()
     }
 
     /// Returns a pointer to the start of the memory storage used by the chunk.
     pub fn as_ptr(&self) -> *const u8 {
+        debug!("Getting a raw pointer to the start of the allocation of the memory chunk.");
         self.storage.ptr()
     }
 
     /// Drop all the data contained in the chunk.
     pub unsafe fn destroy(&self) {
+        debug!("Dropping all the data contained in the memory chunk.");
         self.destroy_to_marker(0);
     }
 
     /// Drop the data contained in the chunk, starting from the given marker.
     pub unsafe fn destroy_to_marker(&self, marker: usize) {
+        debug!("Dropping the data lying between the byte {} and the byte {}, contained in the memory chunk.", marker, self.fill.get());
         //Get the index of the marker.
         //We'll start dropping the content from this location.
         let mut index = marker;

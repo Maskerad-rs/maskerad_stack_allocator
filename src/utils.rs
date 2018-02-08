@@ -32,6 +32,7 @@ pub struct TypeDescription {
 pub unsafe fn get_type_description<T>() -> *const TypeDescription {
     use std::raw::TraitObject;
 
+    debug!("Getting the vtable of a type.");
     //Unique::empty(), or Shared::empty() ?
     //heap::EMPTY is deprecated.
     //Unique and Shared are almost the same, Unique has a ptr AND a phantomData field.
@@ -59,6 +60,8 @@ pub unsafe fn get_type_description<T>() -> *const TypeDescription {
 /// This is necessary in order to properly do cleanup if a panic occurs during an initializer.
 #[inline]
 pub fn bitpack_type_description_ptr(p: *const TypeDescription, is_done: bool) -> usize {
+    debug!("Encoding the 'is_done' state in the low bit of a TypeDescription");
+    trace!("'is_done' state: {}", is_done);
     p as usize | (is_done as usize)
 }
 
@@ -73,6 +76,7 @@ pub fn bitpack_type_description_ptr(p: *const TypeDescription, is_done: bool) ->
 
 #[inline]
 pub fn un_bitpack_type_description_ptr(p: usize) -> (*const TypeDescription, bool) {
+    debug!("Decoding a memory location, getting a type description and a 'is_done' state.");
     ((p & !1) as *const TypeDescription, p & 1 == 1)
 }
 
@@ -125,6 +129,7 @@ pub fn un_bitpack_type_description_ptr(p: usize) -> (*const TypeDescription, boo
 ///
 #[inline]
 pub fn round_up(base: usize, align: usize) -> usize {
+    debug!("Getting an aligned memory location, according to the memory location {:x} and an alignment need of {} bytes", base, align);
     //(base.checked_add(align - 1)).unwrap() & !(align - 1)
     //The solution above works, but our solution is easier to understand and faster.
 

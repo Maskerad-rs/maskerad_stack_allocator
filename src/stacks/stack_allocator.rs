@@ -121,6 +121,7 @@ impl StackAllocator {
     /// assert_eq!(allocator.capacity_copy(), 50);
     /// ```
     pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
+        debug!("Creating a StackAllocator with {} bytes for droppable data and {} bytes for copyable data.", capacity, capacity_copy);
         StackAllocator {
             storage: RefCell::new(MemoryChunk::new(capacity)),
             storage_copy: RefCell::new(MemoryChunk::new(capacity_copy)),
@@ -157,10 +158,13 @@ impl StackAllocator {
     where
         F: FnOnce() -> T,
     {
+        debug!("Allocating data, returning a mutable reference.");
         unsafe {
             if needs_drop::<T>() {
+                trace!("The data to allocate is droppable.");
                 self.alloc_non_copy_mut(op)
             } else {
+                trace!("The data to allocate is copyable.");
                 self.alloc_copy_mut(op)
             }
         }
@@ -203,10 +207,13 @@ impl StackAllocator {
         where
             F: FnOnce() -> T,
     {
+        debug!("Allocating data, returning a mutable reference (unchecked).");
         unsafe {
             if needs_drop::<T>() {
+                trace!("The data to allocate is droppable.");
                 self.alloc_non_copy_mut_unchecked(op)
             } else {
+                trace!("The data to allocate is copyable.");
                 self.alloc_copy_mut_unchecked(op)
             }
         }
@@ -217,6 +224,7 @@ impl StackAllocator {
     where
         F: FnOnce() -> T,
     {
+        trace!("Allocating mutable and droppable data.");
         unsafe {
             //Get the type description of the type T (get its vtable).
             let type_description = utils::get_type_description::<T>();
@@ -249,6 +257,7 @@ impl StackAllocator {
         where
             F: FnOnce() -> T,
     {
+        trace!("Allocating mutable and droppable data (unchecked).");
         unsafe {
             //Get the type description of the type T (get its vtable).
             let type_description = utils::get_type_description::<T>();
@@ -282,6 +291,7 @@ impl StackAllocator {
     where
         F: FnOnce() -> T,
     {
+        trace!("Allocating mutable and copyable data.");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
             let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
@@ -301,6 +311,7 @@ impl StackAllocator {
         where
             F: FnOnce() -> T,
     {
+        trace!("Allocating mutable and copyable data (unchecked).");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
             let ptr = self.alloc_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
@@ -347,10 +358,13 @@ impl StackAllocator {
     where
         F: FnOnce() -> T,
     {
+        debug!("Allocating data, returning an immutable reference.");
         unsafe {
             if needs_drop::<T>() {
+                trace!("Data is droppable.");
                 self.alloc_non_copy(op)
             } else {
+                trace!("Data is copyable.");
                 self.alloc_copy(op)
             }
         }
@@ -394,10 +408,13 @@ impl StackAllocator {
         where
             F: FnOnce() -> T,
     {
+        debug!("Allocating data, returning an immutable reference (unchecked).");
         unsafe {
             if needs_drop::<T>() {
+                trace!("Data is droppable.");
                 self.alloc_non_copy_unchecked(op)
             } else {
+                trace!("Data is copyable.");
                 self.alloc_copy_unchecked(op)
             }
         }
@@ -410,6 +427,7 @@ impl StackAllocator {
     where
         F: FnOnce() -> T,
     {
+        trace!("Allocating immutable and droppable data.");
         unsafe {
             //Get the type description of the type T (get its vtable).
             let type_description = utils::get_type_description::<T>();
@@ -442,6 +460,7 @@ impl StackAllocator {
         where
             F: FnOnce() -> T,
     {
+        trace!("Allocating immutable and droppable data (unchecked).");
         unsafe {
             //Get the type description of the type T (get its vtable).
             let type_description = utils::get_type_description::<T>();
@@ -474,6 +493,7 @@ impl StackAllocator {
     where
         F: FnOnce() -> T,
     {
+        trace!("Allocating immutable and copyable data.");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
             let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
@@ -493,6 +513,7 @@ impl StackAllocator {
         where
             F: FnOnce() -> T,
     {
+        trace!("Allocating immutable and copyable data (unchecked).");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
             let ptr = self.alloc_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
@@ -515,6 +536,7 @@ impl StackAllocator {
         n_bytes: usize,
         align: usize,
     ) -> AllocationResult<(*const u8, *const u8)> {
+        trace!("The droppable data has a size of {} bytes and an alignment of {} bytes.", n_bytes, align);
         let non_copy_storage = self.storage.borrow();
 
         //Get the index of the first unused byte in the memory chunk.
@@ -573,6 +595,7 @@ impl StackAllocator {
         n_bytes: usize,
         align: usize,
     ) -> (*const u8, *const u8) {
+        trace!("The droppable data has a size of {} bytes and an alignment of {} bytes (unchecked).", n_bytes, align);
         let non_copy_storage = self.storage.borrow();
 
         //Get the index of the first unused byte in the memory chunk.
@@ -620,6 +643,7 @@ impl StackAllocator {
     }
 
     fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
+        trace!("The copyable data has a size of {} bytes and an alignment of {} bytes.", n_bytes, align);
         //borrow mutably the memory chunk used by the allocator.
         let copy_storage = self.storage_copy.borrow();
 
@@ -650,6 +674,7 @@ impl StackAllocator {
     }
 
     fn alloc_copy_inner_unchecked(&self, n_bytes: usize, align: usize) -> *const u8 {
+        trace!("The copyable data has a size of {} bytes and an alignment of {} bytes (unchecked).", n_bytes, align);
         //borrow mutably the memory chunk used by the allocator.
         let copy_storage = self.storage_copy.borrow();
 
@@ -700,6 +725,8 @@ impl StackAllocator {
     ///
     /// ```
     pub fn marker(&self) -> usize {
+        debug!("Getting the first unused byte of the memory chunk storing droppable data.");
+        trace!("first unused byte of memory: {}.", self.storage.borrow().fill());
         self.storage.borrow().fill()
     }
 
@@ -731,6 +758,8 @@ impl StackAllocator {
     ///
     /// ```
     pub fn marker_copy(&self) -> usize {
+        debug!("Getting the first unused byte of the memory chunk storing copyable data.");
+        trace!("first unused byte of memory: {}.", self.storage.borrow().fill());
         self.storage_copy.borrow().fill()
     }
 
@@ -763,8 +792,11 @@ impl StackAllocator {
     /// # }
     /// ```
     pub fn reset(&self) {
+        debug!("Resetting completely the memory chunk holding droppable data.");
         unsafe {
+            trace!("all data is being dropped.");
             self.storage.borrow().destroy();
+            trace!("the first unused byte of memory is being set to 0.");
             self.storage.borrow().set_fill(0);
         }
     }
@@ -798,6 +830,8 @@ impl StackAllocator {
     /// # }
     /// ```
     pub fn reset_copy(&self) {
+        debug!("Resetting completely the memory chunk holding copyable data.");
+        trace!("the first unused byte of memory is being set to 0.");
         self.storage_copy.borrow().set_fill(0);
     }
 
@@ -843,8 +877,11 @@ impl StackAllocator {
     /// # }
     /// ```
     pub fn reset_to_marker(&self, marker: usize) {
+        debug!("Resetting partially the memory chunk holding droppable data to the marker {}.", marker);
         unsafe {
+            trace!("The data lying between the byte {} and the byte {} is being dropped.", marker, self.storage.borrow().fill());
             self.storage.borrow().destroy_to_marker(marker);
+            trace!("The first unused byte of memory is being set to {}", marker);
             self.storage.borrow().set_fill(marker);
         }
     }
@@ -889,6 +926,8 @@ impl StackAllocator {
     /// # }
     /// ```
     pub fn reset_to_marker_copy(&self, marker: usize) {
+        debug!("Resetting partially the memory chunk holding copyable data to the marker {}.", marker);
+        trace!("The first unused byte of memory is being set to {}", marker);
         self.storage_copy.borrow().set_fill(marker);
     }
 
@@ -903,6 +942,7 @@ impl StackAllocator {
     /// assert_eq!(allocator.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
+        debug!("Getting the maximum capacity of the memory chunk storing droppable data.");
         self.storage.borrow().capacity()
     }
 
@@ -917,6 +957,7 @@ impl StackAllocator {
     /// assert_eq!(allocator.capacity_copy(), 50);
     /// ```
     pub fn capacity_copy(&self) -> usize {
+        debug!("Getting the maximum capacity of the memory chunk storing copyable data.");
         self.storage_copy.borrow().capacity()
     }
 
@@ -931,6 +972,7 @@ impl StackAllocator {
     /// let ptr = allocator.storage_as_ptr();
     /// ```
     pub fn storage_as_ptr(&self) -> *const u8 {
+        debug!("Getting a raw pointer to the start of the allocation of the memory chunk storing droppable data.");
         self.storage.borrow().as_ptr()
     }
 
@@ -945,11 +987,13 @@ impl StackAllocator {
     /// let ptr = allocator.storage_copy_as_ptr();
     /// ```
     pub fn storage_copy_as_ptr(&self) -> *const u8 {
+        debug!("Getting a raw pointer to the start of the allocation of the memory chunk storing copyable data.");
         self.storage_copy.borrow().as_ptr()
     }
 
     /// Drop all the objects implementing the `Drop` trait.
     fn destroy_stack(&self) -> Result<(), BorrowError> {
+        debug!("The StackAllocator is being dropped, all droppable data is being dropped.");
         unsafe {
             self.storage.try_borrow()?.destroy();
         }

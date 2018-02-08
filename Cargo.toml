@@ -19,3 +19,4 @@ maintenance = { status = "passively-maintained" }
 
 [dependencies]
 serde = { version = "~1.0", optional = true, features = ["derive"] }
+log = "~0.4"

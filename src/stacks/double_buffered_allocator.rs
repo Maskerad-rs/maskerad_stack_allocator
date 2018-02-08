@@ -79,6 +79,7 @@ impl DoubleBufferedAllocator {
     /// # }
     /// ```
     pub fn with_capacity(capacity: usize, capacity_copy: usize) -> Self {
+        debug!("Creating a double buffered allocator of {} bytes for droppable data and {} bytes for copyable data.", capacity, capacity_copy);
         DoubleBufferedAllocator {
             buffers: [
                 StackAllocator::with_capacity(capacity, capacity_copy),
@@ -100,6 +101,7 @@ impl DoubleBufferedAllocator {
     where
         F: FnOnce() -> T,
     {
+        debug!("Allocating data in the double buffered allocator, returning a mutable reference.");
         self.active_buffer().alloc_mut(op)
     }
 
@@ -116,6 +118,7 @@ impl DoubleBufferedAllocator {
     pub fn alloc_mut_unchecked<T, F>(&self, op: F) -> &mut T
         where F: FnOnce() -> T
     {
+        debug!("Allocating data in the double buffered allocator, returning a mutable reference (unchecked).");
         self.active_buffer().alloc_mut_unchecked(op)
     }
 
@@ -130,6 +133,7 @@ impl DoubleBufferedAllocator {
     where
         F: FnOnce() -> T,
     {
+        debug!("Allocating data in the double buffered allocator, returning an immutable reference.");
         self.active_buffer().alloc(op)
     }
 
@@ -147,69 +151,82 @@ impl DoubleBufferedAllocator {
         where
             F: FnOnce() -> T,
     {
+        debug!("Allocating data in the double buffered allocator, returning an immutable reference (unchecked).");
         self.active_buffer().alloc_unchecked(op)
     }
 
     /// Reset the active buffer's memory storage storing data implementing the `Drop` trait, dropping all the content residing inside it.
     pub fn reset(&self) {
+        debug!("Resetting completely the memory chunk storing droppable data of the double buffered allocator.");
         self.active_buffer().reset();
     }
 
     /// Reset the active buffer's memory storage storing data implementing the `Copy` trait.
     pub fn reset_copy(&self) {
+        debug!("Resetting completely the memory chunk storing copyable data of the double buffered allocator.");
         self.active_buffer().reset_copy();
     }
 
     /// Returns an immutable reference to the active `StackAllocator`.
     fn active_buffer(&self) -> &StackAllocator {
+        debug!("Returning an immutable reference to the active buffer of the double buffered allocator.");
         &self.buffers[self.current as usize]
     }
 
     /// Reset partially the active buffer's memory storage storing data implementing the `Drop` trait, dropping all the content residing between the marker and
     /// the first unused memory address of the memory storage.
     pub fn reset_to_marker(&self, marker: usize) {
+        debug!("Resetting partially the memory chunk storing droppable data of the double buffered allocator, from byte {} to byte {}.", marker, self.marker());
         self.active_buffer().reset_to_marker(marker);
     }
 
     /// Reset partially the active buffer's memory storage storing data implementing the `Copy` trait.
     pub fn reset_to_marker_copy(&self, marker: usize) {
+        debug!("Resetting partially the memory chunk storing copyable data of the double buffered allocator, from byte {} to byte {}.", marker, self.marker_copy());
         self.active_buffer().reset_to_marker_copy(marker)
     }
 
     /// Returns the index of the first unused memory address of the active buffer's memory storage storing data implementing
     /// the `Drop` trait.
     pub fn marker(&self) -> usize {
+        debug!("Getting a marker from the memory chunk storing droppable data of the double buffered allocator.");
         self.active_buffer().marker()
     }
 
     /// Returns the index of the first unused memory address of the active buffer's memory storage storing data implementing
     /// the `Copy` trait.
     pub fn marker_copy(&self) -> usize {
+        debug!("Getting a marker from the memory chunk storing copyable data of the double buffered allocator.");
         self.active_buffer().marker_copy()
     }
 
     /// Swap the buffers. The inactive one becomes the active.
     pub fn swap_buffers(&mut self) {
+        debug!("Swapping the active buffer of the double buffered allocator with the inactive one.");
         self.current = !self.current;
     }
 
     /// Returns the maximum capacity the memory storage storing data implementing the `Drop` trait can hold.
     pub fn capacity(&self) -> usize {
+        debug!("Getting the maximum capacity of the memory chunk storing droppable data of the double buffered allocator.");
         self.active_buffer().capacity()
     }
 
     /// Returns the maximum capacity the memory storage storing data implementing the `Copy` trait can hold.
     pub fn capacity_copy(&self) -> usize {
+        debug!("Getting the maximum capacity of the memory chunk storing copyable data of the double buffered allocator.");
         self.active_buffer().capacity_copy()
     }
 
     /// Returns a raw pointer to the start of the memory storage used by the memory storage storing data implementing the `Drop` trait.
     pub fn storage_as_ptr(&self) -> *const u8 {
+        debug!("Getting a raw pointer to the start of the allocation of the memory chunk storing droppable data of the double buffered allocator.");
         self.active_buffer().storage_as_ptr()
     }
 
     /// Returns a raw pointer to the start of the memory storage used by the memory storage storing data implementing the `Copy` trait.
     pub fn storage_copy_as_ptr(&self) -> *const u8 {
+        debug!("Getting a raw pointer to the start of the allocation of the memory chunk storing copyable data of the double buffered allocator.");
         self.active_buffer().storage_copy_as_ptr()
     }
 }
