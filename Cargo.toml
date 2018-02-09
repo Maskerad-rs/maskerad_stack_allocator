@@ -1,6 +1,6 @@
 [package]
 name = "maskerad_memory_allocators"
-version = "5.0.1" #don't forget to update html doc root
+version = "5.1.0" #don't forget to update html doc root
 authors = ["Maskerad developers <maskerad-rs.organization@protonmail.com>"]
 description = "custom allocators, for memory fragmentation prevention."
 license = "MIT/Apache-2.0"

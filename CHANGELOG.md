@@ -112,3 +112,11 @@ AllocationError implement Send and Sync now.
 
 The MemoryChunk structure and the utils module have been hidden from the public API. They are not needed
 to use the library and are implementation details.
+
+#### version 5.1.0
+
+Added the log dependency.
+
+Added debug!, trace! and error! logs trough all the codebase. Debug! logs are placed at the starts
+of all public functions. Trace! are placed at the beginning of all private functions and at various
+places through all functions.

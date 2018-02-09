@@ -47,7 +47,7 @@ use std::intrinsics::needs_drop;
 ///
 /// - And return an immutable/mutable reference to the object which has been placed in the memory storage.
 ///
-/// This offset is calculated by the size of the object, a function pointer to its `Drop` implementation (if the object implement the `Drop` trait),
+/// This offset is calculated by the size of the object, its vtable (if the object implement the `Drop` trait),
 /// its memory-alignment and an offset to align the object in memory.
 ///
 /// ## Roll-back
@@ -227,28 +227,35 @@ impl StackAllocator {
         trace!("Allocating mutable and droppable data.");
         unsafe {
             //Get the type description of the type T (get its vtable).
+            trace!("Getting a TypeDescription of the data being allocated.");
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            trace!("Getting raw pointers to memory locations, to store the type description and the data.");
             let (type_description_ptr, ptr) =
                 self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //Cast them.
+            trace!("Casting the raw pointers to appropriate types.");
             let type_description_ptr = type_description_ptr as *mut usize;
             let ptr = ptr as *mut T;
 
             //write in our type description along with a bit indicating that the object has *not*
             //been initialized yet.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to false.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
 
             //Initialize the object.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //Now that we are done, update the type description to indicate
             //that the object is there.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to true.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
             //Return a mutable reference to the object.
+            trace!("Returning a mutable reference to the allocated data.");
             Ok(&mut *ptr)
         }
     }
@@ -260,28 +267,35 @@ impl StackAllocator {
         trace!("Allocating mutable and droppable data (unchecked).");
         unsafe {
             //Get the type description of the type T (get its vtable).
+            trace!("Getting a TypeDescription of the data being allocated.");
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            trace!("Getting raw pointers to memory locations, to store the type description and the data.");
             let (type_description_ptr, ptr) =
                 self.alloc_non_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
 
             //Cast them.
+            trace!("Casting the raw pointers to appropriate types.");
             let type_description_ptr = type_description_ptr as *mut usize;
             let ptr = ptr as *mut T;
 
             //write in our type description along with a bit indicating that the object has *not*
             //been initialized yet.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to false.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
 
             //Initialize the object.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //Now that we are done, update the type description to indicate
             //that the object is there.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to true.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
             //Return a mutable reference to the object.
+            trace!("Returning a mutable reference to the allocated data.");
             &mut *ptr
         }
     }
@@ -294,15 +308,19 @@ impl StackAllocator {
         trace!("Allocating mutable and copyable data.");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
+            trace!("Getting a raw pointer to a memory location, to store the data.");
             let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //cast this raw pointer to the type of the object.
+            trace!("Casting the raw pointer to appropriate type.");
             let ptr = ptr as *mut T;
 
             //Write the data in the memory location.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //return a mutable reference to this pointer.
+            trace!("Returning a mutable reference to the allocated data.");
             Ok(&mut *ptr)
         }
     }
@@ -314,15 +332,19 @@ impl StackAllocator {
         trace!("Allocating mutable and copyable data (unchecked).");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
+            trace!("Getting a raw pointer to a memory location, to store the data.");
             let ptr = self.alloc_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
 
             //cast this raw pointer to the type of the object.
+            trace!("Casting the raw pointer to appropriate type.");
             let ptr = ptr as *mut T;
 
             //Write the data in the memory location.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //return a mutable reference to this pointer.
+            trace!("Returning a mutable reference to the allocated data.");
             &mut *ptr
         }
     }
@@ -430,28 +452,35 @@ impl StackAllocator {
         trace!("Allocating immutable and droppable data.");
         unsafe {
             //Get the type description of the type T (get its vtable).
+            trace!("Getting a TypeDescription of the data being allocated.");
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            trace!("Getting raw pointers to memory locations, to store the type description and the data.");
             let (type_description_ptr, ptr) =
                 self.alloc_non_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //Cast them.
+            trace!("Casting the raw pointers to appropriate types.");
             let type_description_ptr = type_description_ptr as *mut usize;
             let ptr = ptr as *mut T;
 
             //write in our type description along with a bit indicating that the object has *not*
             //been initialized yet.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to false.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
 
             //Initialize the object.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //Now that we are done, update the type description to indicate
             //that the object is there.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to true.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
             //Return a mutable reference to the object.
+            trace!("Returning an immutable reference to the allocated data.");
             Ok(&*ptr)
         }
     }
@@ -463,28 +492,35 @@ impl StackAllocator {
         trace!("Allocating immutable and droppable data (unchecked).");
         unsafe {
             //Get the type description of the type T (get its vtable).
+            trace!("Getting a TypeDescription of the data being allocated.");
             let type_description = utils::get_type_description::<T>();
 
             //Ask the memory chunk to give us raw pointers to memory locations for our type description and object
+            trace!("Getting raw pointers to memory locations, to store the type description and the data.");
             let (type_description_ptr, ptr) =
                 self.alloc_non_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
 
             //Cast them.
+            trace!("Casting the raw pointers to appropriate types.");
             let type_description_ptr = type_description_ptr as *mut usize;
             let ptr = ptr as *mut T;
 
             //write in our type description along with a bit indicating that the object has *not*
             //been initialized yet.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to false.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, false);
 
             //Initialize the object.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //Now that we are done, update the type description to indicate
             //that the object is there.
+            trace!("Packing in the low bit of the TypeDescription the 'is_done' state to true.");
             *type_description_ptr = utils::bitpack_type_description_ptr(type_description, true);
 
             //Return an immutable reference to the object.
+            trace!("Returning an immutable reference to the allocated data.");
             &*ptr
         }
     }
@@ -496,15 +532,19 @@ impl StackAllocator {
         trace!("Allocating immutable and copyable data.");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
+            trace!("Getting a raw pointer to a memory location, to store the data.");
             let ptr = self.alloc_copy_inner(mem::size_of::<T>(), mem::align_of::<T>())?;
 
             //cast this raw pointer to the type of the object.
+            trace!("Casting the raw pointer to the appropriate type.");
             let ptr = ptr as *mut T;
 
             //Write the data in the memory location.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //return a mutable reference to this pointer.
+            trace!("Returning an immutable reference to the allocated data.");
             Ok(&*ptr)
         }
     }
@@ -516,15 +556,19 @@ impl StackAllocator {
         trace!("Allocating immutable and copyable data (unchecked).");
         unsafe {
             //Get an aligned raw pointer to place the object in it.
+            trace!("Getting a raw pointer to a memory location, to store the data.");
             let ptr = self.alloc_copy_inner_unchecked(mem::size_of::<T>(), mem::align_of::<T>());
 
             //cast this raw pointer to the type of the object.
+            trace!("Casting the raw pointer to the appropriate type.");
             let ptr = ptr as *mut T;
 
             //Write the data in the memory location.
+            trace!("Initializing the data.");
             ptr::write(&mut (*ptr), op());
 
             //return an immutable reference to this pointer.
+            trace!("Returning an immutable reference to the allocated data.");
             &*ptr
         }
     }
@@ -537,22 +581,27 @@ impl StackAllocator {
         align: usize,
     ) -> AllocationResult<(*const u8, *const u8)> {
         trace!("The droppable data has a size of {} bytes and an alignment of {} bytes.", n_bytes, align);
+        trace!("Borrowing a reference to the memory chunk storing droppable data.");
         let non_copy_storage = self.storage.borrow();
 
         //Get the index of the first unused byte in the memory chunk.
+        trace!("Getting the index of the first unused byte in the memory chunk.");
         let fill = non_copy_storage.fill();
 
         //Get the index of where we'll write the type description data
         //(the first unused byte in the memory chunk).
+        trace!("The memory location for the TypeDescription will begin at byte {} ({:x})...", fill, fill);
         let type_description_start = fill;
 
         // Get the index of where the object should reside (unaligned location actually).
         let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
+        trace!("...and will end at {} ({:x})", after_type_description, after_type_description);
 
         //With the index to the unaligned memory address, determine the index to
         //the aligned memory address where the object will reside,
         //according to its memory alignment.
         let start = utils::round_up(after_type_description, align);
+        trace!("The memory location for the actual data will begin at byte {} ({:x})...", start, start);
 
         //Determine the index of the next aligned memory address for a type description, according to the size of the object
         //and the memory alignment of a type description.
@@ -560,9 +609,12 @@ impl StackAllocator {
             start + n_bytes,
             mem::align_of::<*const utils::TypeDescription>(),
         );
+        trace!("...and will end at {} ({:x})", end, end);
 
         //If the allocator becomes oom after this possible allocation, abort the program.
+        trace!("Checking if the allocator has enough remaining memory to store the data.");
         if end >= non_copy_storage.capacity() {
+            error!("The allocator doesn't have enough remaining memory to store the data !");
             return Err(AllocationError::OutOfMemoryError(format!(
                 "The stack allocator is out of memory !"
             )));
@@ -572,12 +624,15 @@ impl StackAllocator {
         //The first unused memory address is at index 'end',
         //where the next type description would be written
         //if an allocation was asked.
+        trace!("Setting the first unused byte of memory of the memory chunk to byte {} ({:x})", end, end);
         non_copy_storage.set_fill(end);
 
         unsafe {
             // Get a raw pointer to the start of our MemoryChunk's RawVec
             let start_storage = non_copy_storage.as_ptr();
+            trace!("Getting a raw pointer to the start of the allocation of the memory chunk: {:p}.", start_storage);
 
+            trace!("Returning a tuple of raw pointers to memory locations for the TypeDescription and data.");
             Ok((
                 //From this raw pointer, get the correct raw pointers with
                         //the indices we calculated earlier.
@@ -596,22 +651,27 @@ impl StackAllocator {
         align: usize,
     ) -> (*const u8, *const u8) {
         trace!("The droppable data has a size of {} bytes and an alignment of {} bytes (unchecked).", n_bytes, align);
+        trace!("Borrowing a reference to the memory chunk storing droppable data.");
         let non_copy_storage = self.storage.borrow();
 
         //Get the index of the first unused byte in the memory chunk.
+        trace!("Getting the index of the first unused byte in the memory chunk.");
         let fill = non_copy_storage.fill();
 
         //Get the index of where we'll write the type description data
         //(the first unused byte in the memory chunk).
+        trace!("The memory location for the TypeDescription will begin at byte {} ({:x})...", fill, fill);
         let type_description_start = fill;
 
         // Get the index of where the object should reside (unaligned location actually).
         let after_type_description = fill + mem::size_of::<*const utils::TypeDescription>();
+        trace!("...and will end at {} ({:x})", after_type_description, after_type_description);
 
         //With the index to the unaligned memory address, determine the index to
         //the aligned memory address where the object will reside,
         //according to its memory alignment.
         let start = utils::round_up(after_type_description, align);
+        trace!("The memory location for the actual data will begin at byte {} ({:x})...", start, start);
 
         //Determine the index of the next aligned memory address for a type description, according to the size of the object
         //and the memory alignment of a type description.
@@ -619,17 +679,21 @@ impl StackAllocator {
             start + n_bytes,
             mem::align_of::<*const utils::TypeDescription>(),
         );
+        trace!("...and will end at {} ({:x})", end, end);
 
         //Update the current top of the stack.
         //The first unused memory address is at index 'end',
         //where the next type description would be written
         //if an allocation was asked.
+        trace!("Setting the first unused byte of memory of the memory chunk to byte {} ({:x})", end, end);
         non_copy_storage.set_fill(end);
 
         unsafe {
             // Get a raw pointer to the start of our MemoryChunk's RawVec
             let start_storage = non_copy_storage.as_ptr();
+            trace!("Getting a raw pointer to the start of the allocation of the memory chunk: {:p}.", start_storage);
 
+            trace!("Returning a tuple of raw pointers to memory locations for the TypeDescription and data.");
             (
                 //From this raw pointer, get the correct raw pointers with
                 //the indices we calculated earlier.
@@ -645,27 +709,35 @@ impl StackAllocator {
     fn alloc_copy_inner(&self, n_bytes: usize, align: usize) -> AllocationResult<*const u8> {
         trace!("The copyable data has a size of {} bytes and an alignment of {} bytes.", n_bytes, align);
         //borrow mutably the memory chunk used by the allocator.
+        trace!("Borrowing a reference to the memory chunk storing copyable data.");
         let copy_storage = self.storage_copy.borrow();
 
         //Get the index of the first unused memory address in the memory chunk.
+        trace!("Getting the index of the first unused byte in the memory chunk.");
         let fill = copy_storage.fill();
 
         //Get the index of the aligned memory address, which will be returned.
         let start = utils::round_up(fill, align);
+        trace!("The memory location for the actual data will begin at byte {} ({:x})...", start, start);
 
         //Get the index of the future first unused memory address, according to the size of the object.
         let end = start + n_bytes;
+        trace!("...and will end at {} ({:x})", end, end);
 
         //We don't grow the capacity, or create another chunk.
+        trace!("Checking if the allocator has enough remaining memory to store the data.");
         if end >= copy_storage.capacity() {
+            error!("The allocator doesn't have enough remaining memory to store the data !");
             return Err(AllocationError::OutOfMemoryError(format!(
                 "The copy stack allocator is out of memory !"
             )));
         }
 
         //Set the first unused memory address of the memory chunk to the index calculated earlier.
+        trace!("Setting the first unused byte of memory of the memory chunk to byte {} ({:x})", end, end);
         copy_storage.set_fill(end);
 
+        trace!("Returning a raw pointer to a memory location for the data.");
         unsafe {
             //Return the raw pointer to the aligned memory location, which will be used to place
             //the object in the allocator.
@@ -676,20 +748,26 @@ impl StackAllocator {
     fn alloc_copy_inner_unchecked(&self, n_bytes: usize, align: usize) -> *const u8 {
         trace!("The copyable data has a size of {} bytes and an alignment of {} bytes (unchecked).", n_bytes, align);
         //borrow mutably the memory chunk used by the allocator.
+        trace!("Borrowing a reference to the memory chunk storing copyable data.");
         let copy_storage = self.storage_copy.borrow();
 
         //Get the index of the first unused memory address in the memory chunk.
+        trace!("Getting the index of the first unused byte in the memory chunk.");
         let fill = copy_storage.fill();
 
         //Get the index of the aligned memory address, which will be returned.
         let start = utils::round_up(fill, align);
+        trace!("The memory location for the actual data will begin at byte {} ({:x})...", start, start);
 
         //Get the index of the future first unused memory address, according to the size of the object.
         let end = start + n_bytes;
+        trace!("...and will end at {} ({:x})", end, end);
 
         //Set the first unused memory address of the memory chunk to the index calculated earlier.
+        trace!("Setting the first unused byte of memory of the memory chunk to byte {} ({:x})", end, end);
         copy_storage.set_fill(end);
 
+        trace!("Returning a raw pointer to a memory location for the data.");
         unsafe {
             //Return the raw pointer to the aligned memory location, which will be used to place
             //the object in the allocator.

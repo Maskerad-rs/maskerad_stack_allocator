@@ -134,7 +134,10 @@ pub fn round_up(base: usize, align: usize) -> usize {
     //The solution above works, but our solution is easier to understand and faster.
 
     let misalignment = base & (align - 1);
+    trace!("Misaligned by: {:x}", misalignment);
     let adjustment = align - misalignment;
+    trace!("Must be aligned by: {:x}", adjustment);
+    trace!("aligned memory location: {:x}", base + adjustment);
 
     base + adjustment
 }

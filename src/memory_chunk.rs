@@ -88,38 +88,50 @@ impl MemoryChunk {
         let fill = self.fill.get();
 
         //While the starting index is inferior to the ending one...
+        trace!("Iterating over all the data contained in the memory chunk...");
         while index < fill {
             //Get a raw pointer on the TypeDescription of the object.
+            trace!("Getting a raw pointer to the memory location of the TypeDescription of the next data.");
             let type_description_data = storage_start.offset(index as isize) as *const usize;
 
             //Decode this raw pointer to obtain the vtable of the object, and a boolean to know if
             //the object has been initialized.
+            trace!("Unpacking the memory location to get the TypeDescription and its 'is_done' state.");
             let (type_description, is_done) =
                 utils::un_bitpack_type_description_ptr(*type_description_data);
 
             //Get the size and the alignment of the object, with its type description.
+            trace!("Getting the size and the alignment of the data.");
             let (size, alignment) = ((*type_description).size, (*type_description).alignment);
+            trace!("size: {}, align: {}", size, alignment);
 
             //Get the index of the memory address just after the type description.
             //It's the unaligned memory address of the object.
+            trace!("Getting the index of the memory location just after this TypeDescription (unaligned memory location of the data).");
             let after_type_description = index + mem::size_of::<*const utils::TypeDescription>();
+            trace!("unaligned memory location: {:x}", after_type_description);
 
             //Get the aligned memory address, with the unaligned one and the alignment of the object.
             //This is where the object *really* lives.
+            trace!("Getting the aligned memory location of the data.");
             let start = utils::round_up(after_type_description, alignment);
+            trace!("aligned memory location: {:x}", start);
 
             //If the object has been successfully initialized, we can call its drop function.
             //We call the function pointer of the object's vtable, here drop_glue, and give him the pointer
             //to the location of the object.
             if is_done {
+                trace!("The data had been successfully initialized when allocated. Dropping the data.");
                 ((*type_description).drop_glue)(storage_start.offset(start as isize) as *const i8);
             }
 
             //Find where the next type description lives.
+            trace!("Finding the next TypeDescription.");
             index = utils::round_up(
                 start + size,
                 mem::align_of::<*const utils::TypeDescription>(),
             );
+            trace!("next TypeDescription: {:x}", index);
         }
     }
 }
