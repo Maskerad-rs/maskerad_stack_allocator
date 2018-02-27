@@ -51,6 +51,7 @@ use allocation_error::AllocationResult;
 /// # }
 /// ```
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug)]
 pub struct DoubleBufferedAllocator {
     buffers: [StackAllocator; 2],
     current: bool,

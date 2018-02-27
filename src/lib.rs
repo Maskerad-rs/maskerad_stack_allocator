@@ -93,7 +93,7 @@
 #![feature(raw)]
 #![feature(core_intrinsics)]
 
-#![doc(html_root_url = "https://docs.rs/maskerad_memory_allocator/5.1.0")]
+#![doc(html_root_url = "https://docs.rs/maskerad_memory_allocator/5.2.0")]
 
 #[cfg(feature = "serde")]
 #[macro_use]

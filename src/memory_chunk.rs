@@ -9,6 +9,8 @@ use alloc::raw_vec::RawVec;
 use std::cell::Cell;
 use core::mem;
 
+use std::fmt;
+
 use utils;
 
 /// The MemoryChunk is just a chunk of memory.
@@ -31,6 +33,12 @@ pub struct MemoryChunk {
     storage: RawVec<u8>,
     /// Index of the first unused byte.
     fill: Cell<usize>,
+}
+
+impl fmt::Debug for MemoryChunk {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "MemoryChunk [Max capacity: {} bytes, Memory used: {} bytes]", self.storage.cap(), self.fill.get())
+    }
 }
 
 impl MemoryChunk {

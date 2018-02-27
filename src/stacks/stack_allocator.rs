@@ -101,6 +101,7 @@ use std::intrinsics::needs_drop;
 /// # }
 /// ```
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug)]
 pub struct StackAllocator {
     storage: RefCell<MemoryChunk>,
     storage_copy: RefCell<MemoryChunk>,

@@ -120,3 +120,7 @@ Added the log dependency.
 Added debug!, trace! and error! logs trough all the codebase. Debug! logs are placed at the starts
 of all public functions. Trace! are placed at the beginning of all private functions and at various
 places through all functions.
+
+#### version 5.2.0
+
+DoubleBufferedAllocator, StackAllocator and MemoryChunk implement Debug now.
